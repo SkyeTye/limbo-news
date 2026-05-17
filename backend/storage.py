@@ -1,9 +1,11 @@
 import json
 import os
+import shutil
 import uuid
 from datetime import datetime
 
 ARTICLES_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "articles")
+ARCHIVE_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "archive")
 
 
 def _ensure_dir():
@@ -60,6 +62,15 @@ def list_articles() -> list[dict]:
                 except json.JSONDecodeError:
                     pass
     return articles
+
+
+def archive_article(article_id: str) -> bool:
+    src = _article_path(article_id)
+    if not os.path.exists(src):
+        return False
+    os.makedirs(ARCHIVE_DIR, exist_ok=True)
+    shutil.move(src, os.path.join(ARCHIVE_DIR, f"{article_id}.json"))
+    return True
 
 
 def save_article(article: dict) -> str:

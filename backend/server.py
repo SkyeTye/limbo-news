@@ -56,6 +56,13 @@ def get_article(article_id):
     return jsonify(article)
 
 
+@app.route("/api/articles/<article_id>", methods=["DELETE"])
+def delete_article(article_id):
+    if not storage.archive_article(article_id):
+        abort(404)
+    return jsonify({"id": article_id, "archived": True})
+
+
 @app.route("/api/research", methods=["POST"])
 def start_research():
     data = request.get_json()
@@ -75,6 +82,15 @@ def queue_status():
         "size": research_queue.size(),
         "current_job_id": research_queue.current_job_id()
     })
+
+
+@app.route("/api/research/<article_id>/cancel", methods=["POST"])
+def cancel_research(article_id):
+    article = storage.get_article(article_id)
+    if not article:
+        abort(404)
+    research_queue.cancel(article_id)
+    return jsonify({"id": article_id, "status": "cancelled"})
 
 
 @app.route("/api/research/<article_id>/status")

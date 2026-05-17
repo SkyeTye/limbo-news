@@ -22,8 +22,8 @@ async function loadArticles() {
     const res = await fetch(`${API}/api/articles`);
     const articles = await res.json();
 
-    const active = articles.filter(a => a.status !== "failed");
-    const failed = articles.filter(a => a.status === "failed");
+    const active = articles.filter(a => a.status !== "failed" && a.status !== "cancelled");
+    const failed = articles.filter(a => a.status === "failed" || a.status === "cancelled");
 
     if (!active.length) {
       grid.innerHTML = `<p class="empty-state">No research yet. Use the prompt above to get started.</p>`;
@@ -47,8 +47,8 @@ function articleCardHTML(a) {
   const date = a.date_researched
     ? new Date(a.date_researched).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
     : "";
-  const statusClass = { complete: "badge-complete", researching: "badge-researching", failed: "badge-failed" }[a.status] || "badge-researching";
-  const statusLabel = { complete: "Complete", researching: "Researching", failed: "Failed" }[a.status] || a.status;
+  const statusClass = { complete: "badge-complete", researching: "badge-researching", failed: "badge-failed", cancelled: "badge-cancelled" }[a.status] || "badge-researching";
+  const statusLabel = { complete: "Complete", researching: "Researching", failed: "Failed", cancelled: "Cancelled" }[a.status] || a.status;
   const excerpt = a.excerpt || "";
   const sources = a.source_count || 0;
   const claims = a.claim_count || 0;
@@ -77,15 +77,29 @@ function showResearchLocked(id, topic, progressNotes) {
   box.innerHTML = `
     <div style="display:flex; align-items:flex-start; gap:14px;">
       <span class="spinner" style="width:16px;height:16px;border-width:2.5px;flex-shrink:0;margin-top:3px"></span>
-      <div>
+      <div style="flex:1;">
         <div style="font-size:14px;font-weight:600;margin-bottom:4px;">Research in progress</div>
         <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;">${escHtml(topic)}</div>
         <div id="live-progress" style="font-size:13px;color:var(--text-muted);">${escHtml(lastNote)}</div>
-        <div style="margin-top:10px;font-size:13px;">
+        <div style="margin-top:10px;font-size:13px;display:flex;align-items:center;gap:16px;">
           <a href="/article/${id}">Watch progress →</a>
+          <button id="cancel-btn" style="background:none;border:none;color:var(--text-muted);font-size:13px;cursor:pointer;padding:0;text-decoration:underline;">Cancel</button>
         </div>
       </div>
     </div>`;
+  document.getElementById("cancel-btn").addEventListener("click", () => cancelResearch(id));
+}
+
+async function cancelResearch(id) {
+  const btn = document.getElementById("cancel-btn");
+  if (btn) btn.textContent = "Cancelling...";
+  try {
+    await fetch(`${API}/api/research/${id}/cancel`, { method: "POST" });
+  } catch (e) { /* ignore network errors */ }
+  clearInterval(pollInterval);
+  clearActiveJob();
+  restoreResearchBox();
+  loadArticles();
 }
 
 function restoreResearchBox() {

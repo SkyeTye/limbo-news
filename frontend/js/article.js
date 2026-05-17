@@ -25,9 +25,9 @@ function renderArticle(article) {
 
   const status = article.status || "researching";
   const statusEl = document.getElementById("article-status");
-  const classes = { complete: "badge-complete", researching: "badge-researching", failed: "badge-failed" };
+  const classes = { complete: "badge-complete", researching: "badge-researching", failed: "badge-failed", cancelled: "badge-cancelled" };
   statusEl.className = `badge ${classes[status] || "badge-researching"}`;
-  statusEl.textContent = { complete: "Complete", researching: "In Progress", failed: "Failed" }[status] || status;
+  statusEl.textContent = { complete: "Complete", researching: "In Progress", failed: "Failed", cancelled: "Cancelled" }[status] || status;
 
   if (status === "researching") {
     clearInterval(pollInterval);
@@ -38,6 +38,11 @@ function renderArticle(article) {
 
   if (status === "failed") {
     document.getElementById("article-body").innerHTML = `<div class="article-section"><p style="color:var(--red)">Research failed: ${escHtml(article.error || "Unknown error")}</p></div>`;
+    return;
+  }
+
+  if (status === "cancelled") {
+    document.getElementById("article-body").innerHTML = `<div class="article-section"><p style="color:var(--text-muted)">Research was cancelled before it completed.</p></div>`;
     return;
   }
 
@@ -171,9 +176,27 @@ function renderComplete(article) {
 </section>`);
   }
 
+  sections.push(`
+<section class="article-section article-actions">
+  <button class="btn-archive" onclick="archiveArticle('${articleId}')">Archive this article</button>
+</section>`);
+
   document.getElementById("article-body").innerHTML = sections.join("");
   renderSidebarNav(article);
   attachToggleHandlers();
+}
+
+async function archiveArticle(id) {
+  const btn = document.querySelector(".btn-archive");
+  if (btn) { btn.disabled = true; btn.textContent = "Archiving..."; }
+  try {
+    const res = await fetch(`${API}/api/articles/${id}`, { method: "DELETE" });
+    if (!res.ok) throw new Error("Failed");
+    window.location.href = "/";
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = "Archive this article"; }
+    alert("Could not archive article. Try again.");
+  }
 }
 
 function claimCard(claim) {

@@ -157,10 +157,10 @@ class ResearchPipeline:
     def _run_agent(self, system: str, user_prompt: str, max_turns: int = 60) -> dict:
         messages = [{"role": "user", "content": user_prompt}]
 
-        for _ in range(max_turns):
+        for turn in range(max_turns):
             response = self.client.messages.create(
                 model="claude-opus-4-7",
-                max_tokens=8192,
+                max_tokens=16000,
                 system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
                 tools=TOOLS,
                 messages=messages
@@ -172,7 +172,18 @@ class ResearchPipeline:
             for block in response.content:
                 if block.type == "tool_use":
                     if block.name == "complete_research":
-                        complete_result = block.input.get("result", {})
+                        # Claude sometimes passes findings directly in block.input instead of
+                        # wrapping them under a "result" key as instructed by the schema.
+                        # Fall back to the full input if "result" is missing or empty.
+                        result_data = block.input.get("result")
+                        if isinstance(result_data, str):
+                            try:
+                                result_data = json.loads(result_data)
+                            except Exception:
+                                result_data = {"raw_output": result_data}
+                        if not isinstance(result_data, dict) or not result_data:
+                            result_data = {k: v for k, v in block.input.items() if k != "result"}
+                        complete_result = result_data
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": block.id,
@@ -187,13 +198,7 @@ class ResearchPipeline:
                         })
 
             if complete_result is not None:
-                # Claude sometimes returns result as a JSON string instead of a dict
-                if isinstance(complete_result, str):
-                    try:
-                        complete_result = json.loads(complete_result)
-                    except Exception:
-                        complete_result = {"raw_output": complete_result}
-                return complete_result if isinstance(complete_result, dict) else {}
+                return complete_result
 
             if response.stop_reason == "end_turn":
                 for block in response.content:
@@ -211,8 +216,17 @@ class ResearchPipeline:
                 for block in response.content
             ]
             messages.append({"role": "assistant", "content": serialized_content})
+
             if tool_results:
-                messages.append({"role": "user", "content": tool_results})
+                user_content = list(tool_results)
+                # Nudge toward completion in the final stretch of turns
+                if turn >= max_turns - 12:
+                    turns_left = max_turns - turn - 1
+                    user_content.append({
+                        "type": "text",
+                        "text": f"You have about {turns_left} turns remaining. Wrap up and call complete_research now with everything you have found so far."
+                    })
+                messages.append({"role": "user", "content": user_content})
 
         return {}
 
@@ -251,8 +265,12 @@ Synthesize all of this into a complete article structure. Call complete_research
 
         return self._run_agent(SYNTHESIS_SYSTEM, prompt, max_turns=10)
 
-    def run(self, topic: str, article_id: str):
-        """Run the full pipeline synchronously. Called by ResearchQueue worker."""
+    def run(self, topic: str, article_id: str, is_cancelled=None):
+        """Run the full pipeline synchronously. Called by ResearchQueue worker.
+        is_cancelled: optional callable that returns True if the job should stop."""
+        def cancelled():
+            return is_cancelled and is_cancelled()
+
         try:
             storage.update_article(article_id, {
                 "status": "researching",
@@ -263,6 +281,7 @@ Synthesize all of this into a complete article structure. Call complete_research
                 PHASE1_SYSTEM,
                 f"Research this topic thoroughly: {topic}"
             )
+            if cancelled(): return
 
             storage.update_article(article_id, {
                 "progress_notes": ["Phase 1 complete.", "Phase 2: Tracing primary sources..."]
@@ -272,6 +291,7 @@ Synthesize all of this into a complete article structure. Call complete_research
                 PHASE2_SYSTEM,
                 f"Topic: {topic}\n\nPhase 1 findings to trace:\n{json.dumps(phase1, indent=2)[:8000]}"
             )
+            if cancelled(): return
 
             storage.update_article(article_id, {
                 "progress_notes": ["Phase 1 complete.", "Phase 2 complete.", "Phase 3: Mapping opinion spectrum..."]
@@ -281,12 +301,15 @@ Synthesize all of this into a complete article structure. Call complete_research
                 PHASE3_SYSTEM,
                 f"Topic: {topic}\n\nResearch findings:\n{json.dumps({**phase1, **phase2}, indent=2)[:8000]}"
             )
+            if cancelled(): return
 
             storage.update_article(article_id, {
                 "progress_notes": ["Phase 1 complete.", "Phase 2 complete.", "Phase 3 complete.", "Synthesizing..."]
             })
 
             final = self._synthesize(topic, phase1, phase2, phase3)
+            if cancelled(): return
+
             if not isinstance(final, dict):
                 final = {}
             final["status"] = "complete"
@@ -309,12 +332,18 @@ class ResearchQueue:
         self._pipeline = ResearchPipeline()
         self._queue: queue.Queue = queue.Queue()
         self._current_id: str | None = None
+        self._cancelled: set = set()
         self._lock = threading.Lock()
         worker = threading.Thread(target=self._worker, daemon=True)
         worker.start()
 
     def submit(self, topic: str, article_id: str):
         self._queue.put((topic, article_id))
+
+    def cancel(self, article_id: str):
+        with self._lock:
+            self._cancelled.add(article_id)
+        storage.update_article(article_id, {"status": "cancelled"})
 
     def size(self) -> int:
         return self._queue.qsize()
@@ -329,8 +358,12 @@ class ResearchQueue:
             with self._lock:
                 self._current_id = article_id
             try:
-                self._pipeline.run(topic, article_id)
+                self._pipeline.run(
+                    topic, article_id,
+                    is_cancelled=lambda: article_id in self._cancelled
+                )
             finally:
                 with self._lock:
                     self._current_id = None
+                    self._cancelled.discard(article_id)
                 self._queue.task_done()
