@@ -149,7 +149,7 @@ function renderComplete(article) {
 
   // Research tree
   const tree = article.research_tree;
-  if (tree) {
+  if (tree && tree.node) {
     sections.push(`
 <section class="article-section" id="sec-tree">
   <div class="section-heading">Research Trail</div>
@@ -238,7 +238,7 @@ function sourceCard(source) {
   const typeLabel = (source.type || "source").toUpperCase().replace(/_/g, " ");
   const dateStr = source.date ? ` · ${source.date}` : "";
   const summaryHtml = source.key_content ? `<div class="source-summary">${escHtml(source.key_content.slice(0, 300))}${source.key_content.length > 300 ? "..." : ""}</div>` : "";
-  const inaccessible = !source.accessible ? `<div class="source-inaccessible">Not publicly accessible${source.access_notes ? ": " + escHtml(source.access_notes) : ""}</div>` : "";
+  const inaccessible = source.accessible === false ? `<div class="source-inaccessible">Not publicly accessible${source.access_notes ? ": " + escHtml(source.access_notes) : ""}</div>` : "";
   const titleHtml = source.url
     ? `<a href="${escHtml(source.url)}" target="_blank" rel="noopener" class="source-title">${escHtml(source.title || source.url)}</a>`
     : `<div class="source-title">${escHtml(source.title || "Untitled")}</div>`;
@@ -256,6 +256,9 @@ function sourceCard(source) {
 }
 
 function gapCard(gap) {
+  if (typeof gap === "string") {
+    return `<div class="gap-card"><div class="gap-title">${escHtml(gap)}</div></div>`;
+  }
   return `
 <div class="gap-card">
   <div class="gap-title">${escHtml(gap.gap || "")}</div>
