@@ -285,6 +285,20 @@ a:hover { text-decoration: underline; }
   font-weight: 600;
 }
 
+.failed-archive-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.failed-archive-toggle:hover .section-title {
+  color: var(--text-secondary);
+}
+
 .empty-state {
   text-align: center;
   padding: 60px 24px;

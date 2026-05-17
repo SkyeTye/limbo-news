@@ -2,16 +2,30 @@ const API = "";
 
 async function loadArticles() {
   const grid = document.getElementById("articles-grid");
+  const archiveSection = document.getElementById("failed-archive-section");
+  const archiveGrid = document.getElementById("failed-archive-grid");
+  const archiveCount = document.getElementById("failed-archive-count");
+
   try {
     const res = await fetch(`${API}/api/articles`);
     const articles = await res.json();
 
-    if (!articles.length) {
+    const active = articles.filter(a => a.status !== "failed");
+    const failed = articles.filter(a => a.status === "failed");
+
+    if (!active.length) {
       grid.innerHTML = `<p class="empty-state">No research yet. Use the prompt above to get started.</p>`;
-      return;
+    } else {
+      grid.innerHTML = active.map(a => articleCardHTML(a)).join("");
     }
 
-    grid.innerHTML = articles.map(a => articleCardHTML(a)).join("");
+    if (failed.length) {
+      archiveSection.style.display = "block";
+      archiveCount.textContent = failed.length;
+      archiveGrid.innerHTML = failed.map(a => articleCardHTML(a)).join("");
+    } else {
+      archiveSection.style.display = "none";
+    }
   } catch (e) {
     grid.innerHTML = `<p class="empty-state">Could not load articles. Make sure the server is running.</p>`;
   }

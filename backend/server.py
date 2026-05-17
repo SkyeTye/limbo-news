@@ -8,7 +8,7 @@ from flask import Flask, jsonify, request, send_from_directory, abort
 from flask_cors import CORS
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 from backend import storage
 from backend.research_pipeline import ResearchPipeline

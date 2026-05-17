@@ -1,8 +1,12 @@
 import json
+import os
 import threading
 import traceback
 import anthropic
+from dotenv import load_dotenv
 from datetime import datetime
+
+load_dotenv(override=True)
 
 from .tools.web_search import web_search
 from .tools.url_fetcher import fetch_url
@@ -140,7 +144,7 @@ Your output must be called via complete_research with the full article structure
 
 class ResearchPipeline:
     def __init__(self):
-        self.client = anthropic.Anthropic()
+        self.client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
     def _execute_tool(self, name: str, inputs: dict):
         if name == "web_search":
