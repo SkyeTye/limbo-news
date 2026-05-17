@@ -1,5 +1,6 @@
 import json
 import os
+import queue
 import threading
 import traceback
 import anthropic
@@ -251,56 +252,85 @@ Synthesize all of this into a complete article structure. Call complete_research
         return self._run_agent(SYNTHESIS_SYSTEM, prompt, max_turns=10)
 
     def run(self, topic: str, article_id: str):
-        def _do_research():
+        """Run the full pipeline synchronously. Called by ResearchQueue worker."""
+        try:
+            storage.update_article(article_id, {
+                "status": "researching",
+                "progress_notes": ["Phase 1: Broad research started..."]
+            })
+
+            phase1 = self._run_agent(
+                PHASE1_SYSTEM,
+                f"Research this topic thoroughly: {topic}"
+            )
+
+            storage.update_article(article_id, {
+                "progress_notes": ["Phase 1 complete.", "Phase 2: Tracing primary sources..."]
+            })
+
+            phase2 = self._run_agent(
+                PHASE2_SYSTEM,
+                f"Topic: {topic}\n\nPhase 1 findings to trace:\n{json.dumps(phase1, indent=2)[:8000]}"
+            )
+
+            storage.update_article(article_id, {
+                "progress_notes": ["Phase 1 complete.", "Phase 2 complete.", "Phase 3: Mapping opinion spectrum..."]
+            })
+
+            phase3 = self._run_agent(
+                PHASE3_SYSTEM,
+                f"Topic: {topic}\n\nResearch findings:\n{json.dumps({**phase1, **phase2}, indent=2)[:8000]}"
+            )
+
+            storage.update_article(article_id, {
+                "progress_notes": ["Phase 1 complete.", "Phase 2 complete.", "Phase 3 complete.", "Synthesizing..."]
+            })
+
+            final = self._synthesize(topic, phase1, phase2, phase3)
+            if not isinstance(final, dict):
+                final = {}
+            final["status"] = "complete"
+            final["topic"] = topic
+            final["id"] = article_id
+            final["date_researched"] = datetime.utcnow().isoformat()
+
+            storage.update_article(article_id, final)
+
+        except Exception as e:
+            storage.update_article(article_id, {
+                "status": "failed",
+                "error": str(e),
+                "traceback": traceback.format_exc()
+            })
+
+
+class ResearchQueue:
+    def __init__(self):
+        self._pipeline = ResearchPipeline()
+        self._queue: queue.Queue = queue.Queue()
+        self._current_id: str | None = None
+        self._lock = threading.Lock()
+        worker = threading.Thread(target=self._worker, daemon=True)
+        worker.start()
+
+    def submit(self, topic: str, article_id: str):
+        self._queue.put((topic, article_id))
+
+    def size(self) -> int:
+        return self._queue.qsize()
+
+    def current_job_id(self) -> str | None:
+        with self._lock:
+            return self._current_id
+
+    def _worker(self):
+        while True:
+            topic, article_id = self._queue.get()
+            with self._lock:
+                self._current_id = article_id
             try:
-                storage.update_article(article_id, {
-                    "status": "researching",
-                    "progress_notes": ["Phase 1: Broad research started..."]
-                })
-
-                phase1 = self._run_agent(
-                    PHASE1_SYSTEM,
-                    f"Research this topic thoroughly: {topic}"
-                )
-
-                storage.update_article(article_id, {
-                    "progress_notes": ["Phase 1 complete.", "Phase 2: Tracing primary sources..."]
-                })
-
-                phase2 = self._run_agent(
-                    PHASE2_SYSTEM,
-                    f"Topic: {topic}\n\nPhase 1 findings to trace:\n{json.dumps(phase1, indent=2)[:8000]}"
-                )
-
-                storage.update_article(article_id, {
-                    "progress_notes": ["Phase 1 complete.", "Phase 2 complete.", "Phase 3: Mapping opinion spectrum..."]
-                })
-
-                phase3 = self._run_agent(
-                    PHASE3_SYSTEM,
-                    f"Topic: {topic}\n\nResearch findings:\n{json.dumps({**phase1, **phase2}, indent=2)[:8000]}"
-                )
-
-                storage.update_article(article_id, {
-                    "progress_notes": ["Phase 1 complete.", "Phase 2 complete.", "Phase 3 complete.", "Synthesizing..."]
-                })
-
-                final = self._synthesize(topic, phase1, phase2, phase3)
-                if not isinstance(final, dict):
-                    final = {}
-                final["status"] = "complete"
-                final["topic"] = topic
-                final["id"] = article_id
-                final["date_researched"] = datetime.utcnow().isoformat()
-
-                storage.update_article(article_id, final)
-
-            except Exception as e:
-                storage.update_article(article_id, {
-                    "status": "failed",
-                    "error": str(e),
-                    "traceback": traceback.format_exc()
-                })
-
-        thread = threading.Thread(target=_do_research, daemon=True)
-        thread.start()
+                self._pipeline.run(topic, article_id)
+            finally:
+                with self._lock:
+                    self._current_id = None
+                self._queue.task_done()

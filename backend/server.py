@@ -11,12 +11,12 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 from backend import storage
-from backend.research_pipeline import ResearchPipeline
+from backend.research_pipeline import ResearchQueue
 
 app = Flask(__name__, static_folder="../frontend", static_url_path="")
 CORS(app)
 
-pipeline = ResearchPipeline()
+research_queue = ResearchQueue()
 
 # --- Static frontend ---
 
@@ -64,8 +64,17 @@ def start_research():
         return jsonify({"error": "topic is required"}), 400
 
     job = storage.create_job(topic)
-    pipeline.run(topic, job["id"])
-    return jsonify({"id": job["id"], "status": "researching"}), 202
+    research_queue.submit(topic, job["id"])
+    position = research_queue.size()
+    return jsonify({"id": job["id"], "status": "queued", "queue_position": position}), 202
+
+
+@app.route("/api/queue")
+def queue_status():
+    return jsonify({
+        "size": research_queue.size(),
+        "current_job_id": research_queue.current_job_id()
+    })
 
 
 @app.route("/api/research/<article_id>/status")

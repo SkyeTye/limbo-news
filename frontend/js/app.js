@@ -1,4 +1,16 @@
 const API = "";
+const ACTIVE_JOB_KEY = "limboActiveJob";
+
+function getActiveJob() {
+  try { return JSON.parse(localStorage.getItem(ACTIVE_JOB_KEY)); }
+  catch (e) { return null; }
+}
+function setActiveJob(id, topic) {
+  localStorage.setItem(ACTIVE_JOB_KEY, JSON.stringify({ id, topic }));
+}
+function clearActiveJob() {
+  localStorage.removeItem(ACTIVE_JOB_KEY);
+}
 
 async function loadArticles() {
   const grid = document.getElementById("articles-grid");
@@ -56,20 +68,53 @@ function articleCardHTML(a) {
 </a>`;
 }
 
-let activeJobId = null;
 let pollInterval = null;
+
+function showResearchLocked(id, topic, progressNotes) {
+  const box = document.getElementById("research-box");
+  const notes = (progressNotes || []);
+  const lastNote = notes[notes.length - 1] || "Starting...";
+  box.innerHTML = `
+    <div style="display:flex; align-items:flex-start; gap:14px;">
+      <span class="spinner" style="width:16px;height:16px;border-width:2.5px;flex-shrink:0;margin-top:3px"></span>
+      <div>
+        <div style="font-size:14px;font-weight:600;margin-bottom:4px;">Research in progress</div>
+        <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;">${escHtml(topic)}</div>
+        <div id="live-progress" style="font-size:13px;color:var(--text-muted);">${escHtml(lastNote)}</div>
+        <div style="margin-top:10px;font-size:13px;">
+          <a href="/article/${id}">Watch progress →</a>
+        </div>
+      </div>
+    </div>`;
+}
+
+function restoreResearchBox() {
+  const box = document.getElementById("research-box");
+  box.innerHTML = `
+    <label for="research-input">Research a new topic</label>
+    <div class="research-input-row">
+      <textarea
+        id="research-input"
+        class="research-textarea"
+        placeholder="Describe a topic, paste an article URL, or ask a question. Press Cmd+Enter or click Research It."
+      ></textarea>
+      <button id="research-btn" class="btn btn-primary">Research It</button>
+    </div>
+    <div id="research-status" class="research-status"></div>`;
+  document.getElementById("research-btn").addEventListener("click", startResearch);
+  document.getElementById("research-input").addEventListener("keydown", e => {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) startResearch();
+  });
+}
 
 async function startResearch() {
   const textarea = document.getElementById("research-input");
-  const btn = document.getElementById("research-btn");
-  const statusEl = document.getElementById("research-status");
   const topic = textarea.value.trim();
-
   if (!topic) return;
 
-  btn.disabled = true;
+  const statusEl = document.getElementById("research-status");
   statusEl.classList.add("visible");
-  statusEl.innerHTML = `<span class="spinner"></span> Submitting research request...`;
+  statusEl.innerHTML = `<span class="spinner"></span> Submitting...`;
 
   try {
     const res = await fetch(`${API}/api/research`, {
@@ -77,32 +122,38 @@ async function startResearch() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ topic })
     });
-
     if (!res.ok) throw new Error("Server error");
-
     const job = await res.json();
-    activeJobId = job.id;
 
-    statusEl.innerHTML = `<span class="spinner"></span> Research started (ID: ${job.id}). This takes 5-10 minutes. <a href="/article/${job.id}">Watch progress</a>`;
-
-    pollInterval = setInterval(async () => {
-      const status = await checkStatus(job.id);
-      if (status === "complete" || status === "failed") {
-        clearInterval(pollInterval);
-        if (status === "complete") {
-          statusEl.innerHTML = `Research complete. <a href="/article/${job.id}">View report</a>`;
-          loadArticles();
-        } else {
-          statusEl.innerHTML = `Research failed. Please try again.`;
-          btn.disabled = false;
-        }
-      }
-    }, 8000);
+    setActiveJob(job.id, topic);
+    showResearchLocked(job.id, topic, []);
+    startPolling(job.id, topic);
 
   } catch (e) {
     statusEl.innerHTML = `Error: ${e.message}`;
-    btn.disabled = false;
   }
+}
+
+function startPolling(id, topic) {
+  clearInterval(pollInterval);
+  pollInterval = setInterval(async () => {
+    try {
+      const res = await fetch(`${API}/api/research/${id}/status`);
+      const data = await res.json();
+
+      const progressEl = document.getElementById("live-progress");
+      if (progressEl && data.progress_notes?.length) {
+        progressEl.textContent = data.progress_notes[data.progress_notes.length - 1];
+      }
+
+      if (data.status === "complete" || data.status === "failed") {
+        clearInterval(pollInterval);
+        clearActiveJob();
+        restoreResearchBox();
+        loadArticles();
+      }
+    } catch (e) { /* keep polling */ }
+  }, 8000);
 }
 
 async function checkStatus(jobId) {
@@ -123,14 +174,29 @@ function escHtml(str) {
     .replace(/"/g, "&quot;");
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   loadArticles();
 
-  const btn = document.getElementById("research-btn");
-  btn.addEventListener("click", startResearch);
+  // Restore locked state if a job was running when the page was closed/refreshed
+  const activeJob = getActiveJob();
+  if (activeJob) {
+    const status = await checkStatus(activeJob.id);
+    if (status === "researching" || status === "queued") {
+      const res = await fetch(`${API}/api/research/${activeJob.id}/status`);
+      const data = await res.json();
+      showResearchLocked(activeJob.id, activeJob.topic, data.progress_notes);
+      startPolling(activeJob.id, activeJob.topic);
+    } else {
+      // Job finished while page was closed — clear the lock
+      clearActiveJob();
+    }
+  }
 
-  const textarea = document.getElementById("research-input");
-  textarea.addEventListener("keydown", e => {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) startResearch();
-  });
+  const btn = document.getElementById("research-btn");
+  if (btn) {
+    btn.addEventListener("click", startResearch);
+    document.getElementById("research-input").addEventListener("keydown", e => {
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) startResearch();
+    });
+  }
 });
