@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Limbo News</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <div class="site-name"><span>Limbo</span> News</div>
+  </div>
+</header>
+
+<main class="container">
+
+  <div class="page-intro">
+    <h1>No more passing by</h1>
+    <p>Every topic gets traced to its primary sources. Claims are verified or flagged. The full research trail is documented so you can see exactly where the information came from before anyone had a chance to spin it.</p>
+  </div>
+
+  <div class="research-box">
+    <label for="research-input">Research a new topic</label>
+    <div class="research-input-row">
+      <textarea
+        id="research-input"
+        class="research-textarea"
+        placeholder="Describe a topic, paste an article URL, or ask a question. Press Cmd+Enter or click Research It."
+      ></textarea>
+      <button id="research-btn" class="btn btn-primary">Research It</button>
+    </div>
+    <div id="research-status" class="research-status"></div>
+  </div>
+
+  <div class="section-header">
+    <span class="section-title">Research Archive</span>
+  </div>
+
+  <div id="articles-grid" class="articles-grid">
+    <p class="empty-state">Loading...</p>
+  </div>
+
+</main>
+
+<script src="/js/app.js"></script>
+</body>
+</html>
