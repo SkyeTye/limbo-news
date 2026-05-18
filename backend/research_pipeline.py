@@ -2,6 +2,7 @@ import json
 import os
 import queue
 import threading
+import time
 import traceback
 import anthropic
 from dotenv import load_dotenv
@@ -161,11 +162,24 @@ class ResearchPipeline:
             return fetch_url(inputs["url"])
         return {"error": f"Unknown tool: {name}"}
 
+    def _create_message(self, **kwargs):
+        """Call messages.create with exponential backoff on overloaded errors."""
+        max_retries = 6
+        for attempt in range(max_retries):
+            try:
+                return self.client.messages.create(**kwargs)
+            except anthropic.APIStatusError as e:
+                if e.status_code == 529 and attempt < max_retries - 1:
+                    wait = 10 * (2 ** attempt)  # 10, 20, 40, 80, 160 s
+                    time.sleep(wait)
+                    continue
+                raise
+
     def _run_agent(self, system: str, user_prompt: str, max_turns: int = 60) -> dict:
         messages = [{"role": "user", "content": user_prompt}]
 
         for turn in range(max_turns):
-            response = self.client.messages.create(
+            response = self._create_message(
                 model="claude-opus-4-7",
                 max_tokens=16000,
                 system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
