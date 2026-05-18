@@ -26,12 +26,21 @@ def _ensure_dir():
 
 
 def _find_article_path(article_id: str) -> str | None:
-    """Return the path to article_id.json, checking active dirs then archive."""
-    for d in _search_dirs() + [ARCHIVE_DIR]:
+    """Return the path to article_id.json, checking active dirs then archive.
+    Tombstone files (archived markers) are skipped in active dirs."""
+    for d in _search_dirs():
         path = os.path.join(d, f"{article_id}.json")
-        if os.path.exists(path):
-            return path
-    return None
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path) as f:
+                if json.load(f).get("tombstone"):
+                    continue  # shadowed by a tombstone — look in archive instead
+        except Exception:
+            pass
+        return path
+    archive_path = os.path.join(ARCHIVE_DIR, f"{article_id}.json")
+    return archive_path if os.path.exists(archive_path) else None
 
 
 def _search_dirs() -> list[str]:
@@ -96,7 +105,9 @@ def list_articles() -> list[dict]:
     for fpath in sorted(all_files, reverse=True):
         with open(fpath) as f:
             try:
-                articles.append(json.load(f))
+                data = json.load(f)
+                if not data.get("tombstone"):
+                    articles.append(data)
             except json.JSONDecodeError:
                 pass
     return articles
@@ -107,7 +118,21 @@ def archive_article(article_id: str) -> bool:
     if not src:
         return False
     os.makedirs(ARCHIVE_DIR, exist_ok=True)
-    shutil.move(src, os.path.join(ARCHIVE_DIR, f"{article_id}.json"))
+
+    # Copy full article to persistent archive dir
+    dst = os.path.join(ARCHIVE_DIR, f"{article_id}.json")
+    with open(src) as f:
+        article = json.load(f)
+    with open(dst, "w") as f:
+        json.dump(article, f, indent=2)
+
+    # Write a tombstone to the persistent ARTICLES_DIR so this article is
+    # permanently hidden from list_articles() even after redeployment restores
+    # git-committed seed files in _SEED_DIR.
+    _ensure_dir()
+    with open(os.path.join(ARTICLES_DIR, f"{article_id}.json"), "w") as f:
+        json.dump({"id": article_id, "tombstone": True}, f)
+
     return True
 
 
