@@ -108,16 +108,23 @@ When done, call complete_research with:
 
 PHASE3_SYSTEM = """You are a political and media analyst doing Phase 3: opinion mapping.
 
-You have research findings. Your job is to map the FULL RANGE of responses to the core evidence across different perspectives. You need to find actual named people making actual statements - not just your own characterization.
+You have research findings. Your job is to map the FULL RANGE of responses to the core evidence. You MUST include critics and skeptics — a result with only supportive voices is incomplete and wrong.
 
-Search for:
-- Scientists and researchers commenting on the findings
-- Politicians from both parties who have spoken on this
-- Former government officials
-- Journalists and commentators across the political spectrum
-- International perspectives if relevant
+Required searches — do ALL of these:
+1. "[topic] debunked" or "[topic] false" or "[topic] misleading"
+2. "[topic] criticism" or "[topic] critics" or "[topic] skeptics"
+3. "[key actor] denies" or "[key actor] responds" or "[key actor] pushback"
+4. "[topic] fact check"
+5. Find experts or scientists who dispute or qualify the findings
+6. Find politicians or officials from the opposing side who have commented
+7. Find journalists or publications who have challenged the narrative
 
-For each position you identify, find direct quotes from named people. Note what evidence they cite and what they ignore.
+Do NOT summarize positions yourself. Find real named people making real statements and quote them directly.
+
+A valid opinion_map MUST contain:
+- At least one position that disputes, criticizes, or is skeptical of the core finding (spectrum_position 0-35)
+- At least one position that supports or accepts it (spectrum_position 65-100)
+- Named people with actual quotes and source URLs for every position
 
 When done, call complete_research with:
 {
@@ -271,6 +278,9 @@ Synthesize all of this into a complete article structure. Call complete_research
         def cancelled():
             return is_cancelled and is_cancelled()
 
+        today = datetime.utcnow().strftime("%B %d, %Y")
+        date_note = f"Today's date is {today}. URLs and sources from {datetime.utcnow().year} are current and valid.\n\n"
+
         try:
             storage.update_article(article_id, {
                 "status": "researching",
@@ -279,7 +289,7 @@ Synthesize all of this into a complete article structure. Call complete_research
 
             phase1 = self._run_agent(
                 PHASE1_SYSTEM,
-                f"Research this topic thoroughly: {topic}"
+                f"{date_note}Research this topic thoroughly: {topic}"
             )
             if cancelled(): return
 
@@ -289,7 +299,7 @@ Synthesize all of this into a complete article structure. Call complete_research
 
             phase2 = self._run_agent(
                 PHASE2_SYSTEM,
-                f"Topic: {topic}\n\nPhase 1 findings to trace:\n{json.dumps(phase1, indent=2)[:8000]}"
+                f"{date_note}Topic: {topic}\n\nPhase 1 findings to trace:\n{json.dumps(phase1, indent=2)[:8000]}"
             )
             if cancelled(): return
 
@@ -299,7 +309,7 @@ Synthesize all of this into a complete article structure. Call complete_research
 
             phase3 = self._run_agent(
                 PHASE3_SYSTEM,
-                f"Topic: {topic}\n\nResearch findings:\n{json.dumps({**phase1, **phase2}, indent=2)[:8000]}"
+                f"{date_note}Topic: {topic}\n\nResearch findings:\n{json.dumps({**phase1, **phase2}, indent=2)[:8000]}"
             )
             if cancelled(): return
 
