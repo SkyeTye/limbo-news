@@ -26,8 +26,8 @@ def _ensure_dir():
 
 
 def _find_article_path(article_id: str) -> str | None:
-    """Return the path to article_id.json, checking runtime dir then seed dir."""
-    for d in _search_dirs():
+    """Return the path to article_id.json, checking active dirs then archive."""
+    for d in _search_dirs() + [ARCHIVE_DIR]:
         path = os.path.join(d, f"{article_id}.json")
         if os.path.exists(path):
             return path
@@ -109,6 +109,20 @@ def archive_article(article_id: str) -> bool:
     os.makedirs(ARCHIVE_DIR, exist_ok=True)
     shutil.move(src, os.path.join(ARCHIVE_DIR, f"{article_id}.json"))
     return True
+
+
+def list_archived_articles() -> list[dict]:
+    if not os.path.isdir(ARCHIVE_DIR):
+        return []
+    articles = []
+    for fname in sorted(os.listdir(ARCHIVE_DIR), reverse=True):
+        if fname.endswith(".json"):
+            with open(os.path.join(ARCHIVE_DIR, fname)) as f:
+                try:
+                    articles.append(json.load(f))
+                except json.JSONDecodeError:
+                    pass
+    return articles
 
 
 def save_article(article: dict) -> str:

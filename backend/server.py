@@ -63,6 +63,24 @@ def delete_article(article_id):
     return jsonify({"id": article_id, "archived": True})
 
 
+@app.route("/api/archive")
+def list_archive():
+    articles = storage.list_archived_articles()
+    summaries = []
+    for a in articles:
+        summaries.append({
+            "id": a.get("id"),
+            "topic": a.get("topic"),
+            "status": a.get("status"),
+            "date_researched": a.get("date_researched"),
+            "excerpt": _excerpt(a.get("executive_summary", "")),
+            "source_count": len(a.get("primary_sources", [])),
+            "claim_count": len(a.get("key_claims", [])),
+            "archived": True
+        })
+    return jsonify(summaries)
+
+
 @app.route("/api/research", methods=["POST"])
 def start_research():
     data = request.get_json()

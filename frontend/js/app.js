@@ -19,11 +19,16 @@ async function loadArticles() {
   const archiveCount = document.getElementById("failed-archive-count");
 
   try {
-    const res = await fetch(`${API}/api/articles`);
-    const articles = await res.json();
+    const [articlesRes, archiveRes] = await Promise.all([
+      fetch(`${API}/api/articles`),
+      fetch(`${API}/api/archive`)
+    ]);
+    const articles = await articlesRes.json();
+    const archived = await archiveRes.json();
 
     const active = articles.filter(a => a.status !== "failed" && a.status !== "cancelled");
     const failed = articles.filter(a => a.status === "failed" || a.status === "cancelled");
+    const allArchived = [...failed, ...archived];
 
     if (!active.length) {
       grid.innerHTML = `<p class="empty-state">No research yet. Use the prompt above to get started.</p>`;
@@ -31,10 +36,10 @@ async function loadArticles() {
       grid.innerHTML = active.map(a => articleCardHTML(a)).join("");
     }
 
-    if (failed.length) {
+    if (allArchived.length) {
       archiveSection.style.display = "block";
-      archiveCount.textContent = failed.length;
-      archiveGrid.innerHTML = failed.map(a => articleCardHTML(a)).join("");
+      archiveCount.textContent = allArchived.length;
+      archiveGrid.innerHTML = allArchived.map(a => articleCardHTML(a)).join("");
     } else {
       archiveSection.style.display = "none";
     }
