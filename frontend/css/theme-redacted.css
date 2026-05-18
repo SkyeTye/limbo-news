@@ -1,0 +1,345 @@
+@import url('https://fonts.googleapis.com/css2?family=Special+Elite&display=swap');
+
+:root {
+  --bg: #F8F7F4;
+  --bg-raised: #FFFFFF;
+  --border: #111111;
+  --border-subtle: #CCCCCC;
+  --text: #0D0D0D;
+  --text-secondary: #333333;
+  --text-muted: #777777;
+  --accent: #CC0000;
+  --accent-light: #FFEEEE;
+  --green: #005500;
+  --green-light: #E8F5E8;
+  --yellow: #886600;
+  --yellow-light: #FFFBE8;
+  --red: #CC0000;
+  --red-light: #FFEEEE;
+  --purple: #550055;
+  --purple-light: #F5E8F5;
+  --radius: 0px;
+  --radius-sm: 0px;
+  --shadow-sm: none;
+  --shadow: 5px 5px 0 rgba(0,0,0,0.12);
+}
+
+body {
+  font-family: 'Special Elite', 'Courier New', monospace;
+  background: var(--bg);
+}
+
+/* ── HEADER ──────────────────────────────────── */
+.site-header {
+  background: #000000;
+  border-bottom: none;
+}
+
+.site-name {
+  font-family: 'Special Elite', monospace;
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #FFFFFF;
+}
+
+/* "Limbo" appears struck-through with a white bar */
+.site-name span {
+  color: var(--accent);
+  position: relative;
+  display: inline-block;
+}
+
+.site-name span::after {
+  content: '';
+  position: absolute;
+  left: -2px;
+  right: -2px;
+  top: 40%;
+  height: 4px;
+  background: #FFFFFF;
+  transform: translateY(-50%);
+}
+
+/* ── INTRO ───────────────────────────────────── */
+.page-intro h1 {
+  font-family: 'Special Elite', monospace;
+  font-size: 30px;
+  letter-spacing: 0.03em;
+  position: relative;
+}
+
+.page-intro p {
+  font-family: 'Special Elite', monospace;
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+/* ── RESEARCH BOX ────────────────────────────── */
+.research-box {
+  border: 2px solid #000000;
+  border-radius: 0;
+  background: var(--bg-raised);
+  box-shadow: 5px 5px 0 #000;
+  position: relative;
+}
+
+.research-box::before {
+  content: '▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓';
+  display: block;
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: rgba(0,0,0,0.1);
+  margin-bottom: 14px;
+  overflow: hidden;
+  white-space: nowrap;
+  height: 14px;
+}
+
+.research-box label {
+  font-family: 'Special Elite', monospace;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.research-textarea {
+  font-family: 'Special Elite', monospace;
+  font-size: 14px;
+  border: 2px solid #000000;
+  border-radius: 0;
+  background: var(--bg);
+}
+
+.research-textarea:focus { border-color: var(--accent); }
+
+.btn {
+  border-radius: 0;
+  font-family: 'Special Elite', monospace;
+  letter-spacing: 0.1em;
+}
+
+.btn-primary {
+  background: #000000;
+  color: #FFFFFF;
+}
+
+.btn-primary:hover { background: var(--accent); }
+
+/* ── SECTION LABEL ───────────────────────────── */
+.section-title {
+  font-family: 'Special Elite', monospace;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+/* ── ARTICLE CARDS ───────────────────────────── */
+.article-card {
+  border: 2px solid #000000;
+  border-radius: 0;
+  box-shadow: 5px 5px 0 #000;
+  background: var(--bg-raised);
+  overflow: hidden;
+}
+
+/* Redaction bar at top of every card */
+.article-card::before {
+  content: '';
+  display: block;
+  height: 14px;
+  background: #000000;
+  margin: -20px -20px 18px;
+  width: calc(100% + 40px);
+}
+
+.article-card:hover {
+  box-shadow: 6px 6px 0 var(--accent);
+  border-color: var(--accent);
+}
+
+.card-topic {
+  font-family: 'Special Elite', monospace;
+  font-size: 15px;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+}
+
+.card-date {
+  font-family: 'Special Elite', monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+.card-excerpt {
+  font-family: 'Special Elite', monospace;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.card-stat, .card-stat strong {
+  font-family: 'Special Elite', monospace;
+  font-size: 11px;
+}
+
+/* ── BADGES ──────────────────────────────────── */
+.badge {
+  border-radius: 0;
+  font-family: 'Special Elite', monospace;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  border: 1px solid currentColor;
+}
+
+.badge-complete  { background: #000; color: #FFF; border-color: #000; }
+.badge-researching { background: #FFF; color: var(--yellow); border-color: var(--yellow); }
+.badge-failed    { background: var(--accent); color: #FFF; border-color: var(--accent); }
+.badge-cancelled { background: #FFF; color: #555; border-color: #555; }
+
+/* ── ARTICLE PAGE ────────────────────────────── */
+.article-header { border-bottom: 2px solid #000000; }
+
+.article-topic {
+  font-family: 'Special Elite', monospace;
+  font-size: 30px;
+  letter-spacing: 0.02em;
+  line-height: 1.25;
+}
+
+.back-link {
+  font-family: 'Special Elite', monospace;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.back-link:hover { color: var(--accent); text-decoration: none; }
+
+.section-heading {
+  font-family: 'Special Elite', monospace;
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  border-bottom: 2px solid #000;
+}
+
+.sidebar-nav a {
+  font-family: 'Special Elite', monospace;
+  font-size: 12px;
+}
+
+.sidebar-nav a.active,
+.sidebar-nav a:hover { color: var(--accent); border-left-color: var(--accent); }
+
+/* ── SUMMARY ─────────────────────────────────── */
+.summary-text {
+  font-family: 'Special Elite', monospace;
+  font-size: 14px;
+  line-height: 1.85;
+}
+
+/* ── CLAIMS ──────────────────────────────────── */
+.claim-card {
+  border: 2px solid #000;
+  border-radius: 0;
+  box-shadow: 3px 3px 0 #000;
+}
+
+.claim-text { font-family: 'Special Elite', monospace; font-size: 13px; }
+
+.claim-verified {
+  border-radius: 0;
+  font-family: 'Special Elite', monospace;
+  font-size: 9px;
+  border: 1px solid currentColor;
+}
+
+.verified-confirmed  { background: #000; color: #FFF; }
+.verified-disputed   { background: #FFF; color: #886600; border-color: #886600; }
+.verified-unverified { background: #F0F0EE; color: #555; border-color: #999; }
+
+.claim-quote {
+  font-family: 'Special Elite', monospace;
+  font-size: 13px;
+  border-radius: 0;
+  border-left: 4px solid #000;
+  background: #F0F0EE;
+}
+
+/* ── TIMELINE ────────────────────────────────── */
+.timeline-date {
+  font-family: 'Special Elite', monospace;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.timeline-event, .timeline-source { font-family: 'Special Elite', monospace; font-size: 13px; }
+
+/* ── SOURCES ─────────────────────────────────── */
+.source-card {
+  border: 2px solid #000;
+  border-radius: 0;
+  box-shadow: 3px 3px 0 #000;
+  background: var(--bg-raised);
+}
+
+.source-type-badge {
+  border-radius: 0;
+  border: 1px solid currentColor;
+  font-family: 'Special Elite', monospace;
+  font-size: 9px;
+}
+
+.source-title   { font-family: 'Special Elite', monospace; font-size: 13px; }
+.source-summary { font-family: 'Special Elite', monospace; font-size: 12px; }
+
+/* ── OPINION MAP ─────────────────────────────── */
+.opinion-question {
+  border-radius: 0;
+  border-left: 4px solid #000;
+  background: #F0F0EE;
+  font-family: 'Special Elite', monospace;
+}
+
+.opinion-card {
+  border: 2px solid #000;
+  border-radius: 0;
+  box-shadow: 3px 3px 0 #000;
+}
+
+.opinion-label { font-family: 'Special Elite', monospace; }
+.voice-quote   { border-radius: 0; font-family: 'Special Elite', monospace; font-size: 12px; }
+
+/* ── GAPS ────────────────────────────────────── */
+.gap-card {
+  border: 2px solid #886600;
+  border-left: 6px solid #886600;
+  border-radius: 0;
+  background: var(--yellow-light);
+  box-shadow: 3px 3px 0 rgba(136,102,0,0.25);
+}
+
+.gap-title { font-family: 'Special Elite', monospace; font-size: 13px; }
+.gap-why, .gap-significance { font-family: 'Special Elite', monospace; font-size: 12px; }
+
+/* ── FULL REPORT ─────────────────────────────── */
+.full-report {
+  font-family: 'Special Elite', monospace;
+  font-size: 14px;
+  line-height: 1.9;
+}
+
+.full-report h1, .full-report h2, .full-report h3 {
+  font-family: 'Special Elite', monospace;
+  letter-spacing: 0.04em;
+}
+
+.full-report blockquote {
+  border-left: 4px solid #000;
+  background: #F0F0EE;
+  border-radius: 0;
+  font-family: 'Special Elite', monospace;
+}

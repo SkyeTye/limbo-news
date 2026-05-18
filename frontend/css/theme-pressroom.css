@@ -1,0 +1,335 @@
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=EB+Garamond:ital,wght@0,400;0,600;1,400;1,600&display=swap');
+
+:root {
+  --bg: #FAF8F3;
+  --bg-raised: #FFFFFF;
+  --border: #E0D8CC;
+  --border-subtle: #EDE8DC;
+  --text: #1C1A18;
+  --text-secondary: #52463C;
+  --text-muted: #9A8E82;
+  --accent: #E63946;
+  --accent-light: #FFF0F1;
+  --green: #2D6A4F;
+  --green-light: #EBF5EF;
+  --yellow: #9B6B00;
+  --yellow-light: #FFF8E8;
+  --red: #E63946;
+  --red-light: #FFF0F1;
+  --purple: #5A2D9A;
+  --purple-light: #F0EBF8;
+  --radius: 1px;
+  --radius-sm: 0px;
+  --shadow-sm: 0 1px 3px rgba(28,26,24,0.05);
+  --shadow: 0 3px 12px rgba(28,26,24,0.09);
+}
+
+body {
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 17px;
+  line-height: 1.75;
+  background: var(--bg);
+}
+
+/* ── HEADER ──────────────────────────────────── */
+.site-header {
+  background: var(--bg-raised);
+  border-bottom: 3px solid #1C1A18;
+}
+
+.site-name {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 28px;
+  letter-spacing: 0.08em;
+  color: var(--text);
+}
+
+.site-name span { color: var(--accent); }
+
+/* ── INTRO ───────────────────────────────────── */
+.page-intro h1 {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 62px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 0.92;
+  margin-bottom: 16px;
+}
+
+.page-intro p {
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 17px;
+  font-style: italic;
+  max-width: 580px;
+}
+
+/* ── RESEARCH BOX ────────────────────────────── */
+.research-box {
+  border: 1px solid var(--border);
+  border-radius: 1px;
+  border-left: 5px solid var(--accent);
+  background: var(--bg-raised);
+}
+
+.research-box label {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 20px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+
+.research-textarea {
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 16px;
+  border-radius: 0;
+  border: 1px solid var(--border);
+}
+
+.research-textarea:focus { border-color: var(--accent); }
+
+.btn {
+  border-radius: 1px;
+}
+
+.btn-primary {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 17px;
+  letter-spacing: 0.06em;
+  background: var(--accent);
+  padding: 8px 24px;
+}
+
+.btn-primary:hover { background: #C62030; }
+
+/* ── SECTION LABEL ───────────────────────────── */
+.section-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 17px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+/* ── ARTICLE CARDS: Numbered ─────────────────── */
+.articles-grid {
+  counter-reset: article-counter;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+}
+
+.article-card {
+  border-radius: 1px;
+  border: 1px solid var(--border);
+  border-bottom: 3px solid #1C1A18;
+  background: var(--bg-raised);
+  counter-increment: article-counter;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Large ghost number behind each card */
+.article-card::after {
+  content: counter(article-counter, decimal-leading-zero);
+  position: absolute;
+  top: 8px;
+  right: 14px;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 56px;
+  color: rgba(28,26,24,0.055);
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+}
+
+.article-card:hover {
+  border-bottom-color: var(--accent);
+  box-shadow: 0 4px 14px rgba(28,26,24,0.1);
+  border-color: var(--border);
+}
+
+.card-topic {
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 19px;
+  font-weight: 600;
+  font-style: normal;
+  line-height: 1.3;
+}
+
+.card-date {
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 12px;
+  font-style: italic;
+}
+
+.card-excerpt {
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.card-stat, .card-stat strong {
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 13px;
+}
+
+/* ── BADGES ──────────────────────────────────── */
+.badge {
+  border-radius: 1px;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.badge-complete  { background: var(--green-light); color: var(--green); }
+.badge-researching { background: var(--yellow-light); color: var(--yellow); }
+.badge-failed    { background: var(--red-light); color: var(--red); }
+.badge-cancelled { background: var(--border-subtle); color: var(--text-muted); }
+
+/* ── ARTICLE PAGE ────────────────────────────── */
+.article-header { border-bottom: 3px solid #1C1A18; }
+
+.article-topic {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 58px;
+  font-weight: 400;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  line-height: 0.92;
+  max-width: none;
+}
+
+.back-link {
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 14px;
+  font-style: italic;
+  color: var(--text-secondary);
+}
+
+.back-link:hover { color: var(--accent); text-decoration: none; }
+
+.section-heading {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 19px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text);
+  border-bottom: 2px solid #1C1A18;
+  padding-bottom: 6px;
+}
+
+.sidebar-nav a {
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 14px;
+  font-style: italic;
+}
+
+.sidebar-nav a.active,
+.sidebar-nav a:hover { color: var(--accent); border-left-color: var(--accent); }
+
+/* ── SUMMARY ─────────────────────────────────── */
+.summary-text {
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 17px;
+  line-height: 1.85;
+}
+
+/* ── CLAIMS ──────────────────────────────────── */
+.claim-card { border-radius: 1px; border: 1px solid var(--border); background: var(--bg-raised); }
+
+.claim-text { font-family: 'EB Garamond', Georgia, serif; font-size: 15px; }
+
+.claim-verified {
+  border-radius: 1px;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+.verified-confirmed  { background: var(--green-light); color: var(--green); }
+.verified-disputed   { background: var(--yellow-light); color: var(--yellow); }
+.verified-unverified { background: var(--border-subtle); color: var(--text-muted); }
+
+.claim-quote {
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 15px;
+  font-style: italic;
+  border-left-color: var(--accent);
+  background: var(--accent-light);
+  border-radius: 0;
+}
+
+/* ── TIMELINE ────────────────────────────────── */
+.timeline-date {
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 12px;
+  font-style: italic;
+}
+
+.timeline-event, .timeline-source { font-family: 'EB Garamond', Georgia, serif; font-size: 15px; }
+
+/* ── SOURCES ─────────────────────────────────── */
+.source-card { border-radius: 1px; border: 1px solid var(--border); background: var(--bg-raised); }
+
+.source-type-badge {
+  border-radius: 1px;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+}
+
+.source-title   { font-family: 'EB Garamond', Georgia, serif; font-size: 15px; }
+.source-summary { font-family: 'EB Garamond', Georgia, serif; font-size: 14px; }
+
+/* ── OPINION MAP ─────────────────────────────── */
+.opinion-question {
+  border-radius: 0;
+  border-left-color: var(--accent);
+  background: var(--accent-light);
+  font-family: 'EB Garamond', Georgia, serif;
+  font-style: italic;
+  font-size: 17px;
+}
+
+.opinion-card  { border-radius: 1px; border: 1px solid var(--border); background: var(--bg-raised); }
+.opinion-label { font-family: 'EB Garamond', Georgia, serif; font-style: italic; font-size: 15px; }
+.voice-quote   { border-radius: 1px; font-family: 'EB Garamond', Georgia, serif; font-style: italic; font-size: 14px; }
+
+/* ── GAPS ────────────────────────────────────── */
+.gap-card {
+  border-radius: 1px;
+  border: 1px solid #C8A84A;
+  background: var(--yellow-light);
+  border-left: 5px solid var(--yellow);
+}
+
+.gap-title      { font-family: 'EB Garamond', Georgia, serif; font-size: 15px; font-weight: 600; }
+.gap-why        { font-family: 'EB Garamond', Georgia, serif; font-size: 14px; }
+.gap-significance { font-family: 'EB Garamond', Georgia, serif; font-size: 13px; font-style: italic; }
+
+/* ── FULL REPORT ─────────────────────────────── */
+.full-report {
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 17px;
+  line-height: 1.85;
+}
+
+.full-report h1, .full-report h2, .full-report h3 {
+  font-family: 'Bebas Neue', sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.full-report h1 { font-size: 42px; line-height: 1; }
+.full-report h2 { font-size: 32px; line-height: 1; }
+.full-report h3 { font-size: 24px; line-height: 1; }
+
+.full-report blockquote {
+  border-left-color: var(--accent);
+  background: var(--accent-light);
+  border-radius: 0;
+  font-style: italic;
+}

@@ -1,0 +1,317 @@
+@import url('https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Playfair+Display:ital,wght@0,700;0,900;1,700;1,900&display=swap');
+
+:root {
+  --bg: #F3EDE0;
+  --bg-raised: #EAE2D0;
+  --border: #9A8E78;
+  --border-subtle: #C4B89C;
+  --text: #180E04;
+  --text-secondary: #4A3C28;
+  --text-muted: #7A6E58;
+  --accent: #B80000;
+  --accent-light: #F5E8E8;
+  --green: #1B4332;
+  --green-light: #D4EAD8;
+  --yellow: #7A5C0A;
+  --yellow-light: #F5EDD4;
+  --red: #8B0000;
+  --red-light: #F5E8E8;
+  --purple: #2D1A6B;
+  --purple-light: #E8E4F5;
+  --radius: 1px;
+  --radius-sm: 0px;
+  --shadow-sm: 2px 2px 6px rgba(0,0,0,0.2);
+  --shadow: 4px 4px 14px rgba(0,0,0,0.28);
+}
+
+body {
+  font-family: 'Courier Prime', 'Courier New', monospace;
+  background: var(--bg);
+}
+
+/* ── HEADER ─────────────────────────────────── */
+.site-header {
+  background: #111111;
+  border-bottom: 3px solid var(--accent);
+}
+
+.site-name {
+  font-family: 'Courier Prime', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #EAE2D0;
+}
+
+.site-name span { color: var(--accent); }
+
+/* ── INTRO ───────────────────────────────────── */
+.page-intro h1 {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 34px;
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: -0.02em;
+}
+
+.page-intro p {
+  font-family: 'Courier Prime', monospace;
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+/* ── RESEARCH BOX ────────────────────────────── */
+.research-box {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  border-left: 4px solid #111111;
+}
+
+.research-box label {
+  font-family: 'Courier Prime', monospace;
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.research-textarea {
+  font-family: 'Courier Prime', monospace;
+  font-size: 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 0;
+}
+
+.research-textarea:focus { border-color: #111111; }
+
+.btn {
+  font-family: 'Courier Prime', monospace;
+  border-radius: 0;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.btn-primary {
+  background: #111111;
+  color: #EAE2D0;
+}
+
+.btn-primary:hover { background: var(--accent); }
+
+/* ── SECTION LABEL ───────────────────────────── */
+.section-title {
+  font-family: 'Courier Prime', monospace;
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* ── ARTICLE CARDS ───────────────────────────── */
+.article-card {
+  border-radius: 0;
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  border-top: 5px solid #111111;
+}
+
+.article-card:hover {
+  border-top-color: var(--accent);
+  box-shadow: 4px 4px 14px rgba(0,0,0,0.25);
+  border-color: var(--border);
+}
+
+.card-topic {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 16px;
+  font-weight: 700;
+  font-style: italic;
+  line-height: 1.35;
+}
+
+.card-date {
+  font-family: 'Courier Prime', monospace;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.card-excerpt {
+  font-family: 'Courier Prime', monospace;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.card-stat, .card-stat strong {
+  font-family: 'Courier Prime', monospace;
+  font-size: 11px;
+}
+
+/* ── BADGES ──────────────────────────────────── */
+.badge {
+  border-radius: 0;
+  font-family: 'Courier Prime', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+}
+
+.badge-complete  { background: #1B4332; color: #D4EAD8; }
+.badge-researching { background: #7A5C0A; color: #F5EDD4; }
+.badge-failed    { background: #8B0000; color: #F5E8E8; }
+.badge-cancelled { background: #444;    color: #CCC; }
+
+/* ── ARTICLE PAGE ────────────────────────────── */
+.article-header { border-bottom: 2px solid #111111; }
+
+.article-topic {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 36px;
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: -0.02em;
+}
+
+.back-link {
+  font-family: 'Courier Prime', monospace;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.back-link:hover { color: var(--accent); text-decoration: none; }
+
+.section-heading {
+  font-family: 'Courier Prime', monospace;
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: 2px solid #111111;
+  padding-bottom: 8px;
+}
+
+.sidebar-nav a {
+  font-family: 'Courier Prime', monospace;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+.sidebar-nav a.active,
+.sidebar-nav a:hover { color: var(--accent); border-left-color: var(--accent); }
+
+/* ── SUMMARY ─────────────────────────────────── */
+.summary-text {
+  font-family: 'Courier Prime', monospace;
+  font-size: 14px;
+  line-height: 1.85;
+}
+
+/* ── CLAIMS ──────────────────────────────────── */
+.claim-card { border-radius: 0; border: 1px solid var(--border); }
+
+.claim-text {
+  font-family: 'Courier Prime', monospace;
+  font-size: 13px;
+}
+
+.claim-verified {
+  border-radius: 0;
+  font-family: 'Courier Prime', monospace;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+}
+
+.verified-confirmed  { background: #1B4332; color: #D4EAD8; }
+.verified-disputed   { background: #7A5C0A; color: #F5EDD4; }
+.verified-unverified { background: #444;    color: #CCC; }
+
+.claim-quote {
+  font-family: 'Courier Prime', monospace;
+  font-size: 13px;
+  background: var(--accent-light);
+  border-left-color: var(--accent);
+  border-radius: 0;
+}
+
+/* ── TIMELINE ────────────────────────────────── */
+.timeline-date {
+  font-family: 'Courier Prime', monospace;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.timeline-event, .timeline-source {
+  font-family: 'Courier Prime', monospace;
+  font-size: 13px;
+}
+
+/* ── SOURCES ─────────────────────────────────── */
+.source-card { border-radius: 0; border: 1px solid var(--border); background: var(--bg-raised); }
+
+.source-type-badge {
+  border-radius: 0;
+  font-family: 'Courier Prime', monospace;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+}
+
+.source-title { font-family: 'Courier Prime', monospace; font-size: 13px; }
+.source-summary { font-family: 'Courier Prime', monospace; font-size: 12px; }
+
+/* ── OPINION MAP ─────────────────────────────── */
+.opinion-question {
+  border-radius: 0;
+  border-left-color: var(--accent);
+  background: var(--accent-light);
+  font-family: 'Playfair Display', Georgia, serif;
+  font-style: italic;
+}
+
+.opinion-card  { border-radius: 0; border: 1px solid var(--border); }
+.opinion-label { font-family: 'Playfair Display', Georgia, serif; font-style: italic; }
+.voice-quote   { border-radius: 0; font-family: 'Courier Prime', monospace; font-size: 12px; }
+
+/* ── GAPS ────────────────────────────────────── */
+.gap-card {
+  border-radius: 0;
+  border: 1px solid #B8960A;
+  background: var(--yellow-light);
+  border-left: 4px solid var(--yellow);
+}
+
+.gap-title { font-family: 'Courier Prime', monospace; font-size: 13px; }
+.gap-why, .gap-significance { font-family: 'Courier Prime', monospace; font-size: 12px; }
+
+/* ── FULL REPORT ─────────────────────────────── */
+.full-report {
+  font-family: 'Courier Prime', monospace;
+  font-size: 14px;
+  line-height: 1.9;
+}
+
+.full-report h1, .full-report h2, .full-report h3 {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-style: italic;
+}
+
+.full-report blockquote {
+  border-radius: 0;
+  border-left-color: var(--accent);
+  background: var(--accent-light);
+  font-family: 'Courier Prime', monospace;
+}
+
+/* ── PROCESS NOTES ───────────────────────────── */
+.process-notes-list li {
+  font-family: 'Courier Prime', monospace;
+  font-size: 12px;
+}
