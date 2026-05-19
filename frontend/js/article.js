@@ -267,18 +267,31 @@ function gapCard(gap) {
 </div>`;
 }
 
+function spectrumDisplayPcts(positions) {
+  const raw = positions.map(p => Math.max(0, Math.min(100, p.spectrum_position || 50)));
+  if (positions.length <= 1) return raw;
+  const minP = Math.min(...raw);
+  const maxP = Math.max(...raw);
+  const range = maxP - minP;
+  if (range >= 50) return raw;
+  // Spread compressed positions across 5–95 to keep dots visible
+  if (range === 0) return raw.map((_, i) => Math.round(5 + (i / (raw.length - 1)) * 90));
+  return raw.map(v => Math.round(5 + ((v - minP) / range) * 90));
+}
+
 function renderOpinionMap(opinionMap) {
   const question = opinionMap.core_question || "";
   const positions = opinionMap.positions || [];
+  const displayPcts = spectrumDisplayPcts(positions);
 
-  const dots = positions.map(p => {
-    const pct = Math.max(0, Math.min(100, p.spectrum_position || 50));
+  const dots = positions.map((p, i) => {
+    const pct = displayPcts[i];
     const hue = Math.round(240 - pct * 1.8);
     return `<div class="opinion-dot" title="${escHtml(p.label || "")}" style="left:${pct}%; background:hsl(${hue},70%,55%)"></div>`;
   }).join("");
 
   const positionCards = positions.map((p, i) => {
-    const pct = Math.max(0, Math.min(100, p.spectrum_position || 50));
+    const pct = displayPcts[i];
     const hue = Math.round(240 - pct * 1.8);
     const voices = (p.key_voices || []).map(v => `
 <div class="voice-item">

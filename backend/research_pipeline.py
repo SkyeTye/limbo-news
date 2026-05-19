@@ -142,7 +142,18 @@ When done, call complete_research with:
     }
   ],
   "process_notes": ["..."]
-}"""
+}
+
+spectrum_position calibration — read carefully:
+- 0 means this position FULLY DISMISSES the core allegation (e.g. "nothing wrong here")
+- 100 means this position FULLY CONFIRMS the core allegation (e.g. "yes, exactly as alleged")
+- The full range of positions across ALL entries MUST span at least 60 points.
+- Correct example for "Is Company X defrauding customers?":
+    Company denies wrongdoing → 5
+    Industry says it's within norms → 30
+    Regulators issued warnings → 60
+    Lawsuits confirm the fraud → 92
+- Wrong example (do NOT do this): 5, 8, 12, 15, 18 — this is meaningless clustering."""
 
 SYNTHESIS_SYSTEM = """You are an editor synthesizing research into a clear, readable report.
 
