@@ -1078,5 +1078,6 @@ a:hover { text-decoration: underline; }
 @media (max-width: 640px) {
   .page-intro h1 { font-size: 22px; }
   .article-topic { font-size: 22px; }
-  .research-input-row { flex-direction: column; }
+  .research-input-row { flex-direction: column; align-items: stretch; }
+  .btn { width: 100%; }
 }
