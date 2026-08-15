@@ -102,7 +102,7 @@ def list_articles() -> list[dict]:
                 seen.add(fname)
                 all_files.append(os.path.join(d, fname))
 
-    for fpath in sorted(all_files, reverse=True):
+    for fpath in all_files:
         with open(fpath) as f:
             try:
                 data = json.load(f)
@@ -110,6 +110,7 @@ def list_articles() -> list[dict]:
                     articles.append(data)
             except json.JSONDecodeError:
                 pass
+    articles.sort(key=lambda a: a.get("date_researched") or "", reverse=True)
     return articles
 
 
@@ -140,13 +141,14 @@ def list_archived_articles() -> list[dict]:
     if not os.path.isdir(ARCHIVE_DIR):
         return []
     articles = []
-    for fname in sorted(os.listdir(ARCHIVE_DIR), reverse=True):
+    for fname in os.listdir(ARCHIVE_DIR):
         if fname.endswith(".json"):
             with open(os.path.join(ARCHIVE_DIR, fname)) as f:
                 try:
                     articles.append(json.load(f))
                 except json.JSONDecodeError:
                     pass
+    articles.sort(key=lambda a: a.get("date_researched") or "", reverse=True)
     return articles
 
 
