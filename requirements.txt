@@ -5,3 +5,7 @@ duckduckgo-search>=6.0.0
 requests>=2.31.0
 beautifulsoup4>=4.12.0
 python-dotenv>=1.0.0
+# Video fact-checker
+imageio-ffmpeg>=0.5.1
+yt-dlp>=2025.1.1
+pypdf>=4.0.0

@@ -18,6 +18,16 @@ CORS(app)
 
 research_queue = ResearchQueue()
 
+# Video fact-checker (private, at /check). See docs/fact-check/research-flow.md
+# Wrapped so a problem in the fact-checker can never take down the main site.
+try:
+    from backend.factcheck import routes as factcheck_routes
+    factcheck_routes.register(app, research_queue=research_queue, storage=storage)
+except Exception as _fc_error:  # pragma: no cover
+    import traceback
+    traceback.print_exc()
+    print("Fact-checker disabled:", _fc_error)
+
 # --- Static frontend ---
 
 @app.route("/")

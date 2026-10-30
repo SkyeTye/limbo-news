@@ -1,0 +1,20 @@
+{
+  "name": "Fact Check",
+  "short_name": "Fact Check",
+  "description": "Share a video, follow every claim to where it started.",
+  "start_url": "/check",
+  "scope": "/check",
+  "display": "standalone",
+  "background_color": "#F7F6F2",
+  "theme_color": "#F7F6F2",
+  "icons": [
+    { "src": "/img/check-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/img/check-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/img/check-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "share_target": {
+    "action": "/check/share",
+    "method": "GET",
+    "params": { "title": "title", "text": "text", "url": "url" }
+  }
+}

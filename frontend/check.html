@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <title>Fact Check</title>
+  <link rel="manifest" href="/check-manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/img/check-icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Fact Check">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="theme-color" content="#F7F6F2" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#161513" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="/css/check.css">
+</head>
+<body>
+  <header class="bar">
+    <a href="/check" class="brand" data-nav>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v18M17 3v18M7 7h10M7 12h10M7 17h10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+      <span>Fact Check</span>
+    </a>
+    <nav id="barnav"></nav>
+  </header>
+  <main id="app" aria-live="polite"><p class="muted pad">Loading…</p></main>
+  <div id="toast" role="status"></div>
+  <script src="/js/check.js"></script>
+</body>
+</html>
