@@ -106,6 +106,50 @@ check(queued[0]["claim"] == "Crime rose 40% since 2020" and queued[0]["central"]
 check(queued[0]["quote_verified"] and queued[0]["seconds"] == 5, "quote verified against transcript, timestamp parsed")
 check(any(c["status"] == "opinion" for c in cl) and any(c["status"] == "unchecked" for c in cl), "opinion labeled, extra claim left unchecked")
 
+
+print("fixes from the first real check (2026-10-30)")
+from backend.factcheck.tracer import coerce_args, Trace as _T
+fn = _T.t_find_in_source
+args, note = coerce_args(fn, "find_in_source", {"source_id": "x", "terms": 'tarbell-media-network-note", "Media network", "undisclosed", "known;", "Note"]'})
+check(args["terms"] == ["tarbell-media-network-note", "Media network", "undisclosed", "known;", "Note"], "broken JSON term list repaired")
+args, note = coerce_args(fn, "find_in_source", {"source_id": "x", "terms": ["Guardian.org"], 'Guardian Foundation", "factory farming': "grant"})
+check("Guardian Foundation" in args["terms"] and "factory farming" in args["terms"] and "grant" in args["terms"], "terms spilled into keys recovered")
+args, note = coerce_args(_T.t_complete_trace, "complete_trace", {"ending": "stopped", "verdict": "no_origin_found", "confidence": "low", "bottom_line": "b", "note": "extra"})
+check("note" not in args and "note" in note, "unknown field ignored instead of failing")
+clid2 = db.add_claim(cid, 1, quote="q", claim="Group X got $40 million", type="statistic", central=1, rank=1, status="queued")
+art, _ = db.save_source("https://advocacy.example.org/tally", "Our analysis finds that donors gave Group X $40 million across forty grants, according to public grant databases we reviewed.", title="Tally")
+t3 = tracer.Trace(check_row, db.get_claim(clid2), "", hop_limit=4, read_limit=6, model="test")
+out, _ = t3.handle("record_hop", {"source_id": art, "passage": "donors gave Group X $40 million across forty grants", "kind": "primary", "source_type": "advocacy", "says": "s", "cites": "grant databases", "mutation": "none", "mutation_note": ""})
+check("hop 1" in out, "article recorded with its source type")
+done_args = {"ending": "origin_found", "verdict": "stretched", "confidence": "medium", "bottom_line": "b", "video_vs_origin": "", "mutations": [], "unknowns": []}
+out, done = t3.handle("complete_trace", done_args)
+check(done is None and out.startswith("NOT YET") and "records" in out, "stopping at an article with budget left is pushed back once")
+out, done = t3.handle("complete_trace", {**done_args, "unknowns": ["grant pages unreachable"]})
+check(done is not None, "second finish is accepted")
+check(tracer.bottom_is_article(clid2), "chain bottoming at an article triggers the Opus retry")
+check(not tracer.bottom_is_article(clid), "chain bottoming at a record does not")
+# migration: a database made before source_type existed
+import sqlite3
+old = os.path.join(TMP, "old.db")
+con = sqlite3.connect(old); con.execute("create table hops (id integer primary key autoincrement, claim_id text not null, position integer not null, source_id text not null, passage_id integer, kind text default '', says text default '', cites text default '', mutation text default 'none', mutation_note text default '', attempt integer default 1, dropped integer default 0, created_at text not null)"); con.commit(); con.close()
+saved = config.DB_PATH; config.DB_PATH = old; db._ready = False; db.init()
+con = sqlite3.connect(old); cols = {r[1] for r in con.execute("pragma table_info(hops)")}; con.close()
+config.DB_PATH = saved; db._ready = False; db.init()
+check("source_type" in cols, "old database gets the new column on startup")
+menu = "\n".join(["Home", "About", "Funds", "Grants", "Research", "Careers", "Contact", "[Subscribe](https://x.org/s)"] * 40)
+article = "The Guardian.org Foundation received a grant of $886,600 in 2020 to support journalism on factory farming. " * 3 + "\nGrant amount: $886,600\nDate: March 2020\n"
+check(web.content_score(menu) < web.THIN <= web.content_score(article), "menu-only page detected as thin, real page is not")
+html = '<html><body><div id="root">Loading</div><script id="__NEXT_DATA__" type="application/json">{"props":{"pageProps":{"grant":{"title":"theguardian.org - Journalism on Factory Farming","body":"<p>Open Philanthropy recommended a grant of $886,600 to support reporting on factory farming over two years.</p>","amount":"$886,600"}}},"buildId":"abc"}</script></body></html>'
+from bs4 import BeautifulSoup
+emb = web._embedded_text(BeautifulSoup(html, "html.parser"))
+check("recommended a grant of $886,600" in emb, "content embedded as page data is recovered")
+calls_seen = []
+saved_j, saved_d = web._jina, web._direct
+web._jina = lambda u, engine=None: (calls_seen.append(engine or "plain"), {"title": "Funds", "text": menu, "via": "jina"})[1] if engine is None else (calls_seen.append("browser"), {"title": "Grant", "text": article, "via": "jina-browser"})[1]
+res = web.fetch("https://www.openphilanthropy.org/grants/x")
+check(res["via"] == "jina-browser" and not res["thin"] and calls_seen == ["plain", "browser"], "thin page re-read with browser rendering, best copy kept")
+web._jina, web._direct = saved_j, saved_d
+
 print("web helpers")
 from bs4 import BeautifulSoup
 html = '<html><body><article><p>We rate this False. <a href="https://www.politifact.com/other">more</a> The data comes from <a href="https://bjs.ojp.gov/report.pdf">the BJS report</a> and <a href="https://twitter.com/share">share</a>.</p></article></body></html>'

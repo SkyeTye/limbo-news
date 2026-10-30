@@ -1,6 +1,6 @@
 # Video Fact-Check: Research Flow
 
-Status: **v0.4 built, not live yet** (code in `backend/factcheck/`, setup in `SETUP.md`). Last audited: 2026-10-30.
+Status: **v0.5 live (pilot)** (code in `backend/factcheck/`, setup in `SETUP.md`). Last audited: 2026-10-30.
 
 This is the source of truth for how the video fact-checker works. Edit the diagrams here, then re-render the images (see "Updating this map" at the bottom). Every change gets a line in the Changelog.
 
@@ -99,10 +99,10 @@ flowchart TD
   SR --> LEAD
   FC --> LEAD["Pick the next lead<br/>1st: the source the speaker named<br/>2nd: earliest or most-cited appearance"]:::step
 
-  LEAD --> READ["Read the source in full<br/>save text + snapshot to the library"]:::step
+  LEAD --> READ["Read the source in full<br/>save text + snapshot to the library<br/>empty JavaScript page? re-read it rendered,<br/>or find another copy"]:::step
   READ --> KIND{"What kind of source is this?"}:::stage
 
-  KIND -->|"Primary: document, dataset, study,<br/>transcript, court or gov record,<br/>original footage, the person's own post"| ORIGIN["ORIGIN FOUND"]:::good
+  KIND -->|"Primary: document, dataset, study,<br/>transcript, court or gov record,<br/>original footage, the person's own post<br/>(an article that adds up figures is NOT primary)"| ORIGIN["ORIGIN FOUND"]:::good
   KIND -->|"Secondary: reports or repeats it<br/>(fact-check articles land here too)"| HOP["Record the hop<br/>who · date · exact passage · what it cites"]:::step
   KIND -->|"Cites nothing ('experts say',<br/>'reports show')"| ASSERT["ORIGIN IS AN<br/>UNSUPPORTED ASSERTION"]:::bad
 
@@ -120,13 +120,15 @@ flowchart TD
   BUDGET["Limits per claim: 6 hops · 12 page reads<br/>hit a limit → STOPPED, show partial chain"]:::warn
   FOLLOW -.-> BUDGET
 
-  ORIGIN --> CHAIN
-  ASSERT --> CHAIN
+  ORIGIN --> PUSH{"Bottom is an article,<br/>not a record, and reads left?"}:::stage
+  ASSERT --> PUSH
+  PUSH -->|"yes: push back once,<br/>go open the records"| FOLLOW
+  PUSH -->|no| CHAIN
   CIRC --> CHAIN
   DEAD --> CHAIN
   BUDGET -.-> CHAIN
   CHAIN["PROVENANCE CHAIN<br/>video → hop → hop → origin<br/>every link has a URL, a snapshot, a date and a quote"]:::stage
-  CHAIN --> ESC{"Central claim ended STOPPED,<br/>DEAD END or low confidence?"}:::stage
+  CHAIN --> ESC{"Central claim ended STOPPED,<br/>DEAD END, low confidence,<br/>or at an article instead of a record?"}:::stage
   ESC -->|"yes (pilot rule)"| OPUS["One retry on Opus<br/>with double the budget,<br/>starting from this chain"]:::warn
   ESC -->|no| DONE["To Compare (Stage 6)"]:::step
   OPUS --> DONE
@@ -230,6 +232,8 @@ erDiagram
 - **Library first:** if we have traced this claim or read its stated source before, start from there.
 - Each hop records: URL, publisher, author, date, source type, the exact passage, what it cites next, and whether it was reachable.
 - Four ways a trace ends: **origin found**, **unsupported assertion**, **circular reporting**, **dead end**. Plus **stopped** when it hits the limit.
+- **Articles are not records.** Every hop records its source type (record or filing, study or data, official statement, transcript or footage, own post, news or analysis, advocacy, social post, reference). A news outlet or advocacy group that adds up figures from records is secondary. If a tracer tries to finish with an article at the bottom while it still has reads left, it is pushed back once to go open the records. If the central claim still ends at an article, Opus gets its retry.
+- **Empty pages.** Pages built by JavaScript often read as menus only. The reader detects that, re-reads the page rendered in a browser, pulls content embedded in the page's data, and keeps the best copy. If it is still empty, the tracer is told to find another copy. Archive.org rate limits are waited out and retried.
 
 #### How other fact-checkers are used (and not used)
 - **As a map, not a verdict.** Fact-check articles often link straight to the primary documents. The tracer gets those links as leads, the same as any search result. Their rating ("False", "Misleading") is removed before the tracer sees it, so it can't anchor our conclusion.
@@ -387,6 +391,7 @@ Run this against 3 to 5 real checks each time we audit.
 
 ## Changelog
 
+- **2026-10-30 · v0.5** First audit, after the first real check (EA funding / AI doom video). Three fixes: (1) articles are not records: source type on every hop, one push-back when a tracer stops at an article with budget left, Opus retry when the central claim still ends at an article; (2) JavaScript-built pages: thin-page detection, rendered re-read, embedded page data, archive.org retries; (3) slightly malformed tool calls are repaired instead of failing. Also fixed on launch day: Railway build (Python 3.12) and claim extraction (forced tool_choice no longer accepted).
 - **2026-10-30 · v0.4** Built. Every stage in this map is implemented (see the code table in SETUP.md). Passes 47 offline checks and a 17-check end-to-end pipeline test with a scripted stand-in for Claude. Not yet run against real videos and the real web: first real runs happen on Railway after the variables are set. Built-in details not shown in the diagrams: every agent action is saved to a per-check research log; pages that change after we save them are flagged; up to 16 frames per video (opening, every cut, then even spacing).
 
 - **2026-10-30 · v0.3** Sonnet pilot decided. Added the receipt check and proposed Opus retry to Diagram 2. Added the Pilot evaluation plan (gold set, three runs, scoring, pass bar).

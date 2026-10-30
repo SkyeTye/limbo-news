@@ -8,6 +8,7 @@ rejected.
 
 Built on PHASE2_SYSTEM in research_pipeline.py, with a structured hop log
 instead of a flat list."""
+import inspect
 import json
 import re
 
@@ -17,6 +18,16 @@ from .capture import PLATFORM_NAME
 
 VERDICTS = ["matches_origin", "stretched", "missing_context", "misattributed", "outdated", "contradicted", "no_origin_found"]
 ENDINGS = ["origin_found", "unsupported_assertion", "circular", "dead_end", "stopped"]
+SOURCE_TYPES = ["record_or_filing", "study_or_dataset", "official_statement", "transcript_or_footage", "own_post",
+                "news_or_analysis", "advocacy", "social_post", "reference", "other"]
+# The bottom of a chain is "only an article" when it is one of these, not a record.
+ARTICLE_TYPES = {"news_or_analysis", "advocacy", "social_post", "reference", "other"}
+
+
+def is_article(hop):
+    """A hop is 'only an article' by its source type; older hops without one fall back to their kind."""
+    st = (hop or {}).get("source_type") or ""
+    return st in ARTICLE_TYPES if st else (hop or {}).get("kind") != "primary"
 MUTATIONS = ["none", "number_changed", "scope_widened", "hedge_dropped", "time_shifted", "correlation_to_causation",
              "quote_clipped", "misattributed", "wrong_clip", "cherry_picked", "other"]
 
@@ -31,6 +42,10 @@ SOURCE KINDS
 - secondary: a news story, blog, post or video that reports or repeats the claim and points (or should point) to something else.
 - unsupported: asserts the claim but cites nothing ("experts say", "reports show"). If this is the bottom of the chain, the origin is an unsupported assertion.
 
+ARTICLES ARE NOT RECORDS
+A news story, blog, newsletter, think tank or advocacy group that tallies, totals or summarizes figures from records (grant databases, tax filings, budgets, court records, datasets, studies) is SECONDARY, even if it did the adding up itself. Follow it down to the records it drew from and check its numbers against them. An article is the origin only of its own original reporting (an interview it conducted, an event it witnessed) or its own opinion and analysis, and then say so plainly in the bottom line.
+Do not stop after one source when the claim rests on records you have not opened and you still have budget. Spend the budget on the records.
+
 HOW TO WORK
 1. search_library first. We keep every source and every past trace. Reuse them.
 2. Then the stated source, web_search, and factcheck_leads. factcheck_leads gives you only the links that existing fact-check articles cite. Their conclusions are withheld on purpose: we check for ourselves. Never treat a fact-checker as an authority. If a fact-check article is itself part of how the claim spread, it can be a hop like any other source.
@@ -39,6 +54,7 @@ HOW TO WORK
 5. For every hop, run the mutation check: compare what this source says to what the hop above it says (for hop 1, compare to the video's quote). Did a number change, the scope widen, a hedge ("may", "some") disappear, old data get presented as new, correlation become causation, a quote get clipped, the speaker get swapped, the clip come from a different event, or one study get picked over many? Use "none" if it matches.
 6. Follow each source's citation down. If a link is dead or blocked, try archive_lookup. If nothing works, the chain ends in a dead end.
 7. Stop when you reach a primary source, when the bottom source cites nothing, when sources cite each other in a loop, or when you run out of budget. Then call complete_trace.
+8. If a page loads but has almost no readable text (built by JavaScript, or a menu-only page), look for another copy: the PDF, a search result for the exact record title, a grants database or filing aggregator, or archive_lookup.
 
 THE VERDICT (relationship between the video's version and the origin)
 - matches_origin: the video's version matches what the origin says.
@@ -48,7 +64,7 @@ THE VERDICT (relationship between the video's version and the origin)
 - outdated: true once, presented as current, no longer true.
 - contradicted: the origin, or the best primary evidence, says otherwise.
 - no_origin_found: you could not find where it started, or it started as an unsupported assertion.
-Confidence is "high" only when the origin was found and its passage directly addresses the claim. Use "low" whenever you are relying on secondary sources.
+Confidence is "high" only when the origin was found and its passage directly addresses the claim. Use "low" whenever the bottom of your chain is an article rather than a record, or you are relying on secondary sources.
 
 Be fair to the creator. Quote them accurately. If a claim holds up, say so plainly. Say what is unknown. Write plainly and briefly. No em dashes."""
 
@@ -70,11 +86,12 @@ TOOLS = [
          "source_id": {"type": "string"},
          "passage": {"type": "string", "description": "Exact words from the source (5 to 120 words) that carry the claim"},
          "kind": {"type": "string", "enum": ["primary", "secondary", "unsupported"]},
+         "source_type": {"type": "string", "enum": SOURCE_TYPES, "description": "What this source is. Articles are news_or_analysis or advocacy, even when they add up figures themselves."},
          "says": {"type": "string", "description": "One plain sentence: what this source says about the claim"},
          "cites": {"type": "string", "description": "What this source points to as its own source (URL or description), or 'nothing'"},
          "mutation": {"type": "string", "enum": MUTATIONS},
          "mutation_note": {"type": "string", "description": "If the claim changed here, exactly how (quote both versions). '' if none."},
-     }, "required": ["source_id", "passage", "kind", "says", "cites", "mutation", "mutation_note"]}},
+     }, "required": ["source_id", "passage", "kind", "source_type", "says", "cites", "mutation", "mutation_note"]}},
     {"name": "complete_trace", "description": "Finish the trace with the verdict.",
      "input_schema": {"type": "object", "properties": {
          "ending": {"type": "string", "enum": ENDINGS},
@@ -108,6 +125,49 @@ def find_passage(text, passage):
     return m.start() if m else -1
 
 
+def _split_terms(value):
+    """Turn a list, a JSON list, or a broken half-JSON string into a clean list of search terms."""
+    if isinstance(value, list):
+        out = []
+        for v in value:
+            out += _split_terms(v)
+        return out
+    if not isinstance(value, str):
+        return [str(value)] if value is not None else []
+    v = value.strip()
+    if v.startswith("["):
+        try:
+            return _split_terms(json.loads(v))
+        except ValueError:
+            pass
+    parts = re.split(r'"\s*,\s*"', v) if '", "' in v or '","' in v else [v]
+    return [p.strip().strip('[]"\' ').strip() for p in parts if p.strip().strip('[]"\' ').strip()]
+
+
+def coerce_args(fn, name, inp):
+    """Accept slightly malformed tool calls instead of failing them:
+    drop fields the tool doesn't have, and repair broken term lists."""
+    params = inspect.signature(fn).parameters
+    args = {k: v for k, v in inp.items() if k in params}
+    extras = {k: v for k, v in inp.items() if k not in params}
+    note = ""
+    if name == "find_in_source":
+        terms = _split_terms(args.get("terms", []))
+        # A model sometimes spills list items into the keys themselves; recover them as terms.
+        for k, v in extras.items():
+            terms += _split_terms(k) + (_split_terms(v) if isinstance(v, (str, list)) else [])
+        args["terms"] = [t for t in terms if t and t != "terms"][:8]
+        extras = {}
+    if "max_results" in args:
+        try:
+            args["max_results"] = int(args["max_results"])
+        except (TypeError, ValueError):
+            args.pop("max_results")
+    if extras:
+        note = "ignored unknown field(s): " + ", ".join(sorted(extras))[:120]
+    return args, note
+
+
 class Trace:
     def __init__(self, check, claim, packet_summary, hop_limit, read_limit, model, attempt=1):
         self.check, self.claim = check, claim
@@ -118,6 +178,7 @@ class Trace:
         self.read_this_trace = set()
         self.factchecks_done = False
         self.searches = 0
+        self.pushed_back = False
 
     # -- helpers --
     def _log(self, tool, inp, result):
@@ -139,14 +200,24 @@ class Trace:
         if from_library:
             head.append(f"(from our library, first read {src.get('first_read','')[:10]})")
         head.append(f"length: {len(text)} characters. Showing {offset}-{offset + len(chunk)}." + (f" {more} more: page with offset or use find_in_source." if more > 0 else ""))
+        if web.content_score(text) < web.THIN:
+            head.append("WARNING: this page has almost no readable text. It was probably built by JavaScript or is mostly menus, "
+                        "so the content you need may be missing. Look for another copy: the PDF, a search for the exact record "
+                        "title, a database or aggregator that lists the same record, or archive_lookup.")
         return "\n".join(head) + "\n\n" + chunk
 
     # -- tools --
     def handle(self, name, inp):
+        fn = getattr(self, "t_" + name, None)
+        if fn is None:
+            return f"ERROR: there is no tool called {name}.", None
+        args, note = coerce_args(fn, name, inp or {})
         try:
-            result, done = getattr(self, "t_" + name)(**inp)
+            result, done = fn(**args)
         except TypeError as e:
-            result, done = f"ERROR: bad arguments ({e})", None
+            result, done = f"ERROR: bad arguments ({e}). Check the tool's fields and try again.", None
+        if note and done is None:
+            result = f"({note})\n{result}"
         self._log(name, inp, result if done is None else json.dumps(done)[:1500])
         return result, done
 
@@ -261,7 +332,7 @@ class Trace:
         if not self._count_read(snap):
             return "BUDGET: no reads left. Record what you have and call complete_trace.", None
         try:
-            res = web.fetch(snap)
+            res = web.fetch_archived(snap)
         except Exception as e:
             return f"The archived copy could not be read either ({str(e)[:150]}).", None
         sid, _ = db.save_source(url, res["text"], title=res.get("title", ""), final_url=snap, fetched_via="wayback", archive_url=snap)
@@ -269,7 +340,7 @@ class Trace:
         self._progress(f"read archived copy of {url}")
         return "(Archived copy from the Wayback Machine, saved under the original URL.)\n" + self._source_view(src), None
 
-    def t_record_hop(self, source_id, passage, kind, says, cites, mutation="none", mutation_note=""):
+    def t_record_hop(self, source_id, passage, kind, says, cites, mutation="none", mutation_note="", source_type=""):
         src = db.get_source(source_id)
         if not src:
             return "REJECTED: unknown source_id. Read the source first.", None
@@ -288,7 +359,9 @@ class Trace:
             return ("REJECTED by the receipt check: that passage does not appear word for word in the saved text of this source. "
                     "Use find_in_source and copy the words exactly."), None
         pid = db.add_passage(source_id, passage.strip(), loc)
-        hid, pos = db.add_hop(self.claim["id"], source_id, pid, kind, says, cites, mutation or "none", mutation_note or "", self.attempt)
+        if source_type not in SOURCE_TYPES:
+            source_type = ""
+        hid, pos = db.add_hop(self.claim["id"], source_id, pid, kind, says, cites, mutation or "none", mutation_note or "", self.attempt, source_type)
         if hops:
             db.add_citation(hops[-1]["source_id"], source_id, hops[-1].get("cites", ""))
         kinds = {"primary": "primary", "secondary": "secondary", "unsupported": "unsupported"}
@@ -306,6 +379,14 @@ class Trace:
             return "REJECTED: ending 'origin_found' needs a recorded hop of kind 'primary'. Record it, or choose another ending.", None
         if verdict != "no_origin_found" and not hops:
             return "REJECTED: a verdict other than no_origin_found needs at least one recorded hop with a receipt.", None
+        reads_left = self.read_limit - self.reads
+        if (hops and not self.pushed_back and ending in ("origin_found", "unsupported_assertion")
+                and is_article(hops[-1]) and reads_left >= 2):
+            self.pushed_back = True
+            return (f"NOT YET: the bottom of your chain is an article ({hops[-1].get('source_type') or 'type not given'}), not a record, "
+                    f"and you still have {reads_left} reads. If it tallies or summarizes figures from records (grants, filings, "
+                    "budgets, datasets, studies), open those records and check its numbers against them. If you truly cannot reach "
+                    "them, call complete_trace again and say why in unknowns."), None
         if ending == "origin_found" and hops and hops[-1]["kind"] != "primary":
             prim = [h["id"] for h in hops if h["kind"] == "primary"]
             rest = [h["id"] for h in hops if h["kind"] != "primary"]
@@ -331,8 +412,10 @@ def _prompt(check, claim, packet_summary, prior=None):
         packet_summary or "(none)",
     ]
     if prior:
-        lines += ["", "A FIRST TRACER ALREADY WORKED ON THIS AND ENDED BADLY. Its chain so far (hop id: source -> passage):", prior,
-                  "Continue from here. Keep hops that hold up, drop any that do not (drop_hop_ids), and push further down the chain."]
+        lines += ["", "A FIRST TRACER ALREADY WORKED ON THIS. It stopped early, hit a dead end, was not confident, or ended at an article "
+                  "instead of a record. Its chain so far (hop id: source -> passage):", prior,
+                  "Continue from here. Keep hops that hold up, drop any that do not (drop_hop_ids), and push further down the chain, "
+                  "to the records themselves."]
     return "\n".join(lines)
 
 
@@ -361,8 +444,14 @@ def _context_window(transcript, seconds, quote):
 def _prior_chain(claim_id):
     out = []
     for h in db.chain_for(claim_id):
-        out.append(f"- hop id {h['id']} (position {h['position']}, {h['kind']}): {h.get('title') or h['url']} [{h['url']}] source_id {h['source_id']}\n  \"{(h.get('passage') or '')[:300]}\"\n  cites: {h.get('cites','')}")
+        out.append(f"- hop id {h['id']} (position {h['position']}, {h['kind']}, {h.get('source_type') or 'type not given'}): {h.get('title') or h['url']} [{h['url']}] source_id {h['source_id']}\n  \"{(h.get('passage') or '')[:300]}\"\n  cites: {h.get('cites','')}")
     return "\n".join(out) or "(no hops recorded)"
+
+
+def bottom_is_article(claim_id):
+    """True when the chain ends at an article rather than a record (Diagram 2: triggers the Opus retry)."""
+    hops = db.hops_for(claim_id)
+    return bool(hops) and is_article(hops[-1])
 
 
 def trace_claim(check, claim, transcript, central):
@@ -379,7 +468,8 @@ def trace_claim(check, claim, transcript, central):
 
     result = run(config.TRACE_MODEL, hop_limit, read_limit, 1)
     attempts = [{"model": config.TRACE_MODEL, "result": result}]
-    bad = (result is None or result.get("ending") in ("stopped", "dead_end") or result.get("confidence") == "low")
+    bad = (result is None or result.get("ending") in ("stopped", "dead_end") or result.get("confidence") == "low"
+           or bottom_is_article(claim["id"]))
     if central and bad and config.OPUS_RETRY:
         db.update_claim(claim["id"], model=config.RETRY_MODEL)
         db.merge_claim_data(claim["id"], retrying=True)

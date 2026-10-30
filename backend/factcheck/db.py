@@ -109,6 +109,7 @@ create table if not exists hops (
   cites text default '',
   mutation text default 'none',
   mutation_note text default '',
+  source_type text default '',
   attempt integer default 1,
   dropped integer default 0,
   created_at text not null
@@ -215,6 +216,11 @@ def init():
                 con.executescript(FTS)
             except sqlite3.OperationalError:
                 pass  # sqlite without FTS5: search falls back to LIKE
+            # Columns added after the first deploy (databases created earlier lack them).
+            for table, col, decl in [("hops", "source_type", "text default ''")]:
+                cols = {r[1] for r in con.execute(f"pragma table_info({table})").fetchall()}
+                if col not in cols:
+                    con.execute(f"alter table {table} add column {col} {decl}")
             con.commit()
         finally:
             con.close()
@@ -476,12 +482,12 @@ def add_citation(from_source, to_source, context=""):
 
 # ---------- hops ----------
 
-def add_hop(claim_id, source_id, passage_id, kind, says, cites, mutation, mutation_note, attempt=1):
+def add_hop(claim_id, source_id, passage_id, kind, says, cites, mutation, mutation_note, attempt=1, source_type=""):
     with conn() as c:
         pos = (c.execute("select coalesce(max(position),0) from hops where claim_id=? and dropped=0", (claim_id,)).fetchone()[0] or 0) + 1
-        cur = c.execute("""insert into hops (claim_id, position, source_id, passage_id, kind, says, cites, mutation, mutation_note, attempt, created_at)
-                           values (?,?,?,?,?,?,?,?,?,?,?)""",
-                        (claim_id, pos, source_id, passage_id, kind, says, cites, mutation, mutation_note, attempt, now()))
+        cur = c.execute("""insert into hops (claim_id, position, source_id, passage_id, kind, says, cites, mutation, mutation_note, attempt, source_type, created_at)
+                           values (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (claim_id, pos, source_id, passage_id, kind, says, cites, mutation, mutation_note, attempt, source_type, now()))
         return cur.lastrowid, pos
 
 

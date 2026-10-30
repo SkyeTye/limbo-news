@@ -24,6 +24,9 @@
     stopped: ["Stopped here: the trace hit its step limit", ""],
   };
   const KIND = { primary: "Primary source", secondary: "Repeats it", unsupported: "Cites nothing" };
+  const STYPE = { record_or_filing: "Record or filing", study_or_dataset: "Study or data", official_statement: "Official statement",
+    transcript_or_footage: "Transcript or footage", own_post: "Their own post", news_or_analysis: "News or analysis",
+    advocacy: "Advocacy group", social_post: "Social post", reference: "Reference site" };
   const MUT = {
     number_changed: "Number changed", scope_widened: "Scope widened", hedge_dropped: "Hedge dropped",
     time_shifted: "Old info shown as new", correlation_to_causation: "Correlation became causation",
@@ -262,7 +265,7 @@
       const q = `check=${c.id}&claim=${x.id}&pid=${hop.passage_id || ""}&depth=${depth}&max=${max}`;
       h += `<li class="rung" data-n="${depth}">
         <div class="who">${esc(hop.publisher || hop.title || host(hop.url))}</div>
-        <div class="meta"><span class="kind ${esc(hop.kind)}">${esc(KIND[hop.kind] || hop.kind)}</span>${hop.published_at ? `<span>${esc(day(hop.published_at))}</span>` : ""}<span>${esc(host(hop.url))}</span></div>
+        <div class="meta"><span class="kind ${esc(hop.kind)}">${esc(KIND[hop.kind] || hop.kind)}</span>${STYPE[hop.source_type] ? `<span>${esc(STYPE[hop.source_type])}</span>` : ""}${hop.published_at ? `<span>${esc(day(hop.published_at))}</span>` : ""}<span>${esc(host(hop.url))}</span></div>
         ${hop.title && hop.publisher ? `<div class="small">${esc(hop.title)}</div>` : ""}
         <div class="passage"><mark>${esc(hop.passage || "")}</mark></div>
         ${hop.says ? `<div class="small">${esc(hop.says)}</div>` : ""}

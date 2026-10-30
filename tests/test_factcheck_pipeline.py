@@ -92,9 +92,9 @@ def fake_create(**kw):
                      ("complete_trace", {"ending": "dead_end", "verdict": "no_origin_found", "confidence": "low", "bottom_line": "We could not find where this number comes from.", "video_vs_origin": "", "mutations": [], "unknowns": ["Any source for 'doubled'."]})]
         elif "A FIRST TRACER" in user0:  # the Opus retry continues the chain
             steps = [("read_source", {"url": "https://news.example.org/stanford-phone-study"}),
-                     ("record_hop", {"source_id": sid_of("https://news.example.org/stanford-phone-study"), "passage": "Stanford researchers surveyed 1,200 teens and found that 31% met criteria for problematic phone use", "kind": "secondary", "says": "Reports 31% problematic use", "cites": "https://stanford.example.edu/paper.pdf", "mutation": "number_changed", "mutation_note": "Video says 70% addicted; this says 31% problematic use."}),
+                     ("record_hop", {"source_id": sid_of("https://news.example.org/stanford-phone-study"), "passage": "Stanford researchers surveyed 1,200 teens and found that 31% met criteria for problematic phone use", "kind": "secondary", "source_type": "news_or_analysis", "says": "Reports 31% problematic use", "cites": "https://stanford.example.edu/paper.pdf", "mutation": "number_changed", "mutation_note": "Video says 70% addicted; this says 31% problematic use."}),
                      ("read_source", {"url": "https://stanford.example.edu/paper.pdf"}),
-                     ("record_hop", {"source_id": sid_of("https://stanford.example.edu/paper.pdf"), "passage": "31% met criteria for problematic smartphone use, and 70% reported checking their phone within five minutes of waking", "kind": "primary", "says": "31% problematic use; 70% check phone soon after waking", "cites": "nothing", "mutation": "other", "mutation_note": "The 70% is about checking phones after waking, not addiction."}),
+                     ("record_hop", {"source_id": sid_of("https://stanford.example.edu/paper.pdf"), "passage": "31% met criteria for problematic smartphone use, and 70% reported checking their phone within five minutes of waking", "kind": "primary", "source_type": "study_or_dataset", "says": "31% problematic use; 70% check phone soon after waking", "cites": "nothing", "mutation": "other", "mutation_note": "The 70% is about checking phones after waking, not addiction."}),
                      ("complete_trace", {"ending": "origin_found", "verdict": "stretched", "confidence": "high", "bottom_line": "The study is real, but it found 31% had problematic use. The 70% figure is about checking phones after waking, not addiction.", "video_vs_origin": "Video: 70% addicted. Study: 31% problematic use (not a diagnosis); 70% check their phone within five minutes of waking.", "mutations": [{"type": "number_changed", "note": "31% became 70%"}], "unknowns": []})]
         else:  # first Sonnet pass: one hop, one deliberate misquote, then stops
             steps = [("search_library", {"query": "Stanford 70% teens addicted phones"}),
@@ -102,7 +102,7 @@ def fake_create(**kw):
                      ("web_search", {"query": "Stanford study 70% teens addicted phones"}),
                      ("read_source", {"url": "https://dailyviral.example.com/teens-phones"}),
                      ("record_hop", {"source_id": sid_of("https://dailyviral.example.com/teens-phones"), "passage": "Stanford proved 70 percent of teens are addicted", "kind": "secondary", "says": "x", "cites": "y", "mutation": "none", "mutation_note": ""}),
-                     ("record_hop", {"source_id": sid_of("https://dailyviral.example.com/teens-phones"), "passage": "A Stanford study shows 70% of teens are addicted to their phones", "kind": "secondary", "says": "Repeats the 70% claim", "cites": "https://news.example.org/stanford-phone-study", "mutation": "none", "mutation_note": ""}),
+                     ("record_hop", {"source_id": sid_of("https://dailyviral.example.com/teens-phones"), "passage": "A Stanford study shows 70% of teens are addicted to their phones", "kind": "secondary", "source_type": "news_or_analysis", "says": "Repeats the 70% claim", "cites": "https://news.example.org/stanford-phone-study", "mutation": "none", "mutation_note": ""}),
                      ("complete_trace", {"ending": "stopped", "verdict": "no_origin_found", "confidence": "low", "bottom_line": "Ran out of budget.", "video_vs_origin": "", "mutations": [], "unknowns": []})]
         name, inp = steps[min(turn, len(steps) - 1)]
         return msg(model, name, inp)
@@ -144,6 +144,7 @@ expect(central["verdict"] == "stretched" and central["ending"] == "origin_found"
 expect([a["model"] for a in central["data"]["attempts"]] == [config.TRACE_MODEL, config.RETRY_MODEL], "first Sonnet pass, then one Opus retry")
 expect([h["kind"] for h in chain] == ["secondary", "secondary", "primary"], "chain: viral post -> news story -> study")
 expect(chain[1]["mutation"] == "number_changed", "mutation recorded on the hop where it happened")
+expect([h["source_type"] for h in chain] == ["news_or_analysis", "news_or_analysis", "study_or_dataset"], "source types recorded on every hop")
 expect(calls["rejections_seen"] >= 1, "misquoted passage was rejected and the agent saw the rejection")
 expect(central["data"]["factchecks"][0]["rating"] == "Mostly False", "fact-check rating stored for later, not shown to the tracer")
 second = next(c for c in claims if c["claim"].startswith("Teen screen time"))
