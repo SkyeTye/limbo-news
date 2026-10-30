@@ -72,7 +72,8 @@ def fake_create(**kw):
     model = kw["model"]
     bp = sum(1 for m in kw["messages"] if isinstance(m["content"], list) for b in m["content"] if isinstance(b, dict) and "cache_control" in b)
     calls["max_breakpoints"] = max(calls["max_breakpoints"], bp)
-    if kw.get("tool_choice", {}).get("name") == "record_claims":
+    if any(t["name"] == "record_claims" for t in kw.get("tools", [])):
+        assert kw.get("tool_choice", {}).get("type") != "tool", "forced tool_choice is rejected by current models"
         imgs = sum(1 for b in kw["messages"][0]["content"] if b.get("type") == "image")
         assert imgs >= 3, "frames were sent to Claude"
         return msg(model, "record_claims", {"title": "Stanford study on teen phone addiction", "thesis": "Teens are addicted to phones and parents must act.", "claims": [

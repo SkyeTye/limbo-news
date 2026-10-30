@@ -43,18 +43,22 @@ def create(**kwargs):
 
 
 def structured(model, system, content, tool_name, schema, max_tokens=4000):
-    """Force Claude to answer by calling one tool; return that tool's input."""
-    resp = create(
-        model=model,
-        max_tokens=max_tokens,
-        system=system,
-        tools=[{"name": tool_name, "description": "Record your answer.", "input_schema": schema}],
-        tool_choice={"type": "tool", "name": tool_name},
-        messages=[{"role": "user", "content": content}],
-    )
-    for b in resp.content:
-        if b.type == "tool_use" and b.name == tool_name:
-            return b.input
+    """Have Claude answer by calling one tool; return that tool's input.
+    Newer models reject a forced tool_choice, so the tool is offered with
+    tool_choice auto and Claude is told (and if needed, reminded) to call it."""
+    tools = [{"name": tool_name, "description": "Record your answer. You must call this exactly once.", "input_schema": schema}]
+    sys_text = system + f"\n\nAnswer only by calling the {tool_name} tool."
+    messages = [{"role": "user", "content": content}]
+    for attempt in range(3):
+        resp = create(model=model, max_tokens=max_tokens, system=sys_text, tools=tools,
+                      tool_choice={"type": "auto"}, messages=messages)
+        for b in resp.content:
+            if b.type == "tool_use" and b.name == tool_name:
+                return b.input
+        messages = messages + [
+            {"role": "assistant", "content": [b.model_dump(exclude_none=True) for b in resp.content] or [{"type": "text", "text": "(no answer)"}]},
+            {"role": "user", "content": [{"type": "text", "text": f"Call the {tool_name} tool now with your answer."}]},
+        ]
     raise RuntimeError("Claude did not return a structured answer")
 
 
