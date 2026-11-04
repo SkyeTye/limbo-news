@@ -1,53 +1,45 @@
-"""Stage 3 · Claim extraction and Stage 4 · Triage.
+"""Stage 3 · Find the central claim (and Stage 4 · Triage, now trivial).
 
-Claude watches the frames, reads the transcript and caption, and pulls out the
-thesis plus every factual claim with its timestamp, exact words and stated
-source. Then the top claims (max 3, central first) are picked for tracing."""
+Since v0.6 the tool checks ONE claim per video: the single, central, checkable
+claim the video rests on. In testing, the "top 3" claims were nearly always the
+same claim from different lines, with the same root sources. The transcript is
+shown to the viewer as-is, line by line, so no other claims are written up."""
 import re
 
 from . import config, llm
 from .capture import PLATFORM_NAME, stamp
 
-CLAIM_TYPES = ["statistic", "quote", "event", "study", "causal", "clip", "comparison", "prediction", "opinion"]
+CLAIM_TYPES = ["statistic", "quote", "event", "study", "causal", "clip", "comparison", "other"]
 
-SYSTEM = """You are the first step of a fact-checking tool. You read a short social video (still frames, transcript, caption) and pull out exactly what it claims. You do not judge whether anything is true. That comes later.
+SYSTEM = """You are the first step of a fact-checking tool. You read a short social video (still frames, transcript, caption) and find the ONE central, checkable claim it rests on. You do not judge whether it is true.
 
 Rules:
 - Use only what the frames, transcript and caption show. Never guess. Never add facts.
-- "quote" must be the creator's exact words, copied from the transcript, from on-screen text visible in a frame, or from the caption. Do not paraphrase in "quote".
-- "claim" is a plain, specific, checkable restatement of the quote, with names, numbers, places and dates filled in from context. One claim per item: split compound sentences ("crime is up 40% because of X" is a statistic claim and a causal claim).
-- On-screen text, charts, screenshots of headlines or posts shown in the video are claims too. Read them carefully.
-- "stated_source" is what the creator says the claim comes from ("a Harvard study", "the CDC", "this clip"), or "" if they name nothing.
-- Opinions, value judgments, jokes and predictions get type "opinion" or "prediction". They are not checked as facts.
-- The thesis is one sentence: what the video wants the viewer to believe or do. Individual claims can be true while the thesis is not.
-- Mark exactly one claim as central: the one the thesis most depends on. Rank the others by how much the thesis depends on them and how specific and checkable they are.
+- Pick the single factual claim the video's message depends on most, that can be checked against sources (a number, an event, a quote, a study, a funding link, a clip's origin). Not an opinion, a value judgment, a joke or a prediction.
+- If several lines say versions of the same thing, it is one claim: pick the most specific version (the one with the number, the name, the source).
+- "quote" is the creator's exact words from the transcript, from on-screen text visible in a frame, or from the caption. Do not paraphrase in "quote".
+- "claim" is a plain, specific, checkable restatement of the quote, 25 words or fewer, with names, numbers, places and dates filled in from context.
+- "stated_source" is what the creator says it comes from ("a Harvard study", "Effort News"), or "" if they name nothing.
+- If the video makes no checkable factual claim at all, set checkable to false and say why in why_not (one short sentence).
 - Write plainly. No em dashes."""
 
 SCHEMA = {
     "type": "object",
     "properties": {
         "title": {"type": "string", "description": "Concrete label for the video, max 8 words"},
-        "thesis": {"type": "string", "description": "One sentence: what the video wants you to believe"},
-        "claims": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "quote": {"type": "string"},
-                    "claim": {"type": "string"},
-                    "timestamp": {"type": "string", "description": "m:ss where it is said or shown, '' if only in the caption"},
-                    "where": {"type": "string", "enum": ["speech", "on_screen", "caption"]},
-                    "type": {"type": "string", "enum": CLAIM_TYPES},
-                    "stated_source": {"type": "string"},
-                    "central": {"type": "boolean"},
-                    "checkworthy": {"type": "integer", "description": "0 = not checkable or trivial, 3 = specific, checkable and central to the thesis"},
-                },
-                "required": ["quote", "claim", "timestamp", "where", "type", "stated_source", "central", "checkworthy"],
-            },
-        },
+        "checkable": {"type": "boolean"},
+        "why_not": {"type": "string", "description": "Only when checkable is false"},
+        "quote": {"type": "string"},
+        "claim": {"type": "string"},
+        "timestamp": {"type": "string", "description": "m:ss where it is said or shown, '' if only in the caption"},
+        "where": {"type": "string", "enum": ["speech", "on_screen", "caption"]},
+        "type": {"type": "string", "enum": CLAIM_TYPES},
+        "stated_source": {"type": "string"},
     },
-    "required": ["title", "thesis", "claims"],
+    "required": ["title", "checkable", "quote", "claim", "timestamp", "where", "type", "stated_source"],
 }
+
+EXTRACT_FRAMES = 10  # fewer images = faster answer; on-screen text still gets read
 
 
 def _norm(s):
@@ -64,63 +56,39 @@ def _secs(ts):
         return None
 
 
+def _pick_frames(frames, n):
+    if len(frames) <= n:
+        return frames
+    return [frames[round(i * (len(frames) - 1) / (n - 1))] for i in range(n)]
+
+
 def extract(packet):
     lines = [f"A {PLATFORM_NAME.get(packet['platform'], 'social')} video by {packet.get('creator') or 'an unknown creator'}"
              + (f", posted {packet['posted_at']}" if packet.get("posted_at") else "")
              + (f", {stamp(packet['duration'])} long." if packet.get("duration") else ".")]
     content = []
-    frames = packet.get("frames") or []
+    frames = _pick_frames(packet.get("frames") or [], EXTRACT_FRAMES)
     if frames:
         lines.append(f"You are given {len(frames)} still frames from the video, in order, each labeled with its timestamp.")
         content += llm.images_content(frames, stamp)
     else:
         lines.append("You cannot see the video, only its text.")
-    lines.append("")
-    lines.append("TRANSCRIPT\n" + (packet.get("transcript") or "(none available: the video may have no speech)"))
-    lines.append("")
-    lines.append("CAPTION\n" + (packet.get("caption") or "(none)"))
-    lines.append("\nPull out the thesis and every factual claim.")
+    lines += ["", "TRANSCRIPT\n" + (packet.get("transcript") or "(none available: the video may have no speech)"),
+              "", "CAPTION\n" + (packet.get("caption") or "(none)"), "\nFind the one central, checkable claim."]
     content.append({"type": "text", "text": "\n".join(lines)})
-    out = llm.structured(config.EXTRACT_MODEL, SYSTEM, content, "record_claims", SCHEMA, max_tokens=6000)
-    return out
+    return llm.structured(config.EXTRACT_MODEL, SYSTEM, content, "record_central_claim", SCHEMA, max_tokens=1500)
 
 
-def triage(packet, extracted):
-    """Return claims in report order with status: queued (to trace), opinion, or unchecked."""
+def central_claim(packet, extracted):
+    """Return the claim dict to trace, or None when the video makes no checkable claim."""
+    q = (extracted.get("quote") or "").strip()
+    if not extracted.get("checkable", True) or not q or not (extracted.get("claim") or "").strip():
+        return None
     haystack = _norm(" ".join([packet.get("transcript", ""), packet.get("caption", "")]))
-    claims = []
-    for c in extracted.get("claims") or []:
-        q = (c.get("quote") or "").strip()
-        if not q:
-            continue
-        verified = _norm(q) in haystack if c.get("where") != "on_screen" else None
-        claims.append({**c, "quote_verified": verified, "seconds": _secs(c.get("timestamp"))})
-    if claims and not any(c.get("central") for c in claims):
-        best = max(claims, key=lambda c: c.get("checkworthy", 0))
-        best["central"] = True
-    seen_central = False
-    for c in claims:
-        if c.get("central") and seen_central:
-            c["central"] = False
-        seen_central = seen_central or bool(c.get("central"))
-
-    def score(c):
-        return (1 if c.get("central") else 0, c.get("checkworthy", 0))
-    checkable = [c for c in claims if c["type"] not in ("opinion", "prediction") and c.get("checkworthy", 0) > 0]
-    checkable.sort(key=score, reverse=True)
-    picked = checkable[: config.MAX_CLAIMS]
-    for rank, c in enumerate(checkable, 1):
-        c["rank"] = rank
-        c["status"] = "queued" if c in picked else "unchecked"
-    for c in claims:
-        if c not in checkable:
-            c["rank"] = 99
-            c["status"] = "opinion" if c["type"] in ("opinion", "prediction") else "unchecked"
-            if c["status"] == "opinion":
-                c["central"] = c.get("central") and not checkable
-    # If the central claim is an opinion, the first checkable claim becomes the one we lead with.
-    if checkable and not any(c.get("central") and c["status"] == "queued" for c in claims):
-        for c in claims:
-            c["central"] = False
-        checkable[0]["central"] = True
-    return sorted(claims, key=lambda c: (c["status"] != "queued", c.get("rank", 99)))
+    verified = _norm(q) in haystack if extracted.get("where") != "on_screen" else None
+    return {
+        "quote": q, "claim": extracted["claim"].strip(), "timestamp": extracted.get("timestamp", ""),
+        "seconds": _secs(extracted.get("timestamp")), "where": extracted.get("where", "speech"),
+        "type": extracted.get("type", "other"), "stated_source": extracted.get("stated_source", ""),
+        "quote_verified": verified, "central": True, "rank": 1, "status": "queued",
+    }

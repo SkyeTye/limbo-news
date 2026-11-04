@@ -169,7 +169,33 @@ def create():
 @bp.route("/api/checks")
 def list_checks():
     _require()
-    return jsonify({"checks": db.list_checks(), "queue": pipeline.queue_size(), "current": pipeline.current()})
+    archived = request.args.get("archived") == "1"
+    return jsonify({"checks": db.list_checks(archived=archived), "archived_count": db.count_archived(),
+                    "queue": pipeline.queue_size(), "current": pipeline.current()})
+
+
+@bp.route("/api/check/<cid>/archive", methods=["POST"])
+def archive(cid):
+    _require()
+    if not db.get_check(cid):
+        abort(404)
+    archived = (request.get_json(silent=True) or {}).get("archived", True)
+    db.set_archived(cid, bool(archived))
+    return jsonify({"ok": True, "archived": bool(archived)})
+
+
+@bp.route("/api/check/<cid>", methods=["DELETE"])
+def delete(cid):
+    _require()
+    check = db.get_check(cid)
+    if not check:
+        abort(404)
+    if check["status"] in ("queued", "running"):
+        return jsonify({"error": "This check is still running. Archive it, or wait for it to finish."}), 409
+    db.delete_check(cid)
+    import shutil
+    shutil.rmtree(pipeline.frames_dir(cid), ignore_errors=True)
+    return jsonify({"ok": True})
 
 
 def _claim_view(c):

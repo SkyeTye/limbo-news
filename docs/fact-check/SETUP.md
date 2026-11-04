@@ -33,14 +33,14 @@ Changing a variable redeploys the service.
 
 Then in TikTok or Instagram: **Share → Fact-check this**.
 
-## 3. What happens after you share
+## 3. What happens after you share (v0.6)
 
-1. **Capture** (about 20 to 40 s): caption, creator, date, comments, transcript, frames at every cut.
-2. **Claims** appear (about 30 to 60 s): the thesis, up to 3 claims picked to trace (central first), opinions labeled.
-3. **Traces** fill in (2 to 5 min): one Sonnet tracer per claim, in parallel. If the central claim stops early, hits a dead end or is low confidence, Opus gets one retry with double the budget.
-4. **Context**: named people on both sides, what the video leaves out, and only now other fact-checkers' verdicts next to ours.
+1. **Seconds:** the post's creator, date and transcript appear, line by line.
+2. **About 30 to 60 s:** **the claim**, the one central, checkable claim the video rests on, with its exact words and timestamp. Its line in the transcript is highlighted.
+3. **A few minutes, live:** the timeline grows one step at a time, from the video back toward where the claim started. The step being built ripples and shows what the tracer is reading. Each step shows the source's name, its exact words, one line on how it compares to the step above, and **Read the full article**, which opens the original page scrolled to the quote and highlighted.
+4. **Last:** where it started, then the verdict (label, confidence, one sentence) and anything still unknown.
 
-Every receipt opens our saved copy with the exact passage highlighted, plus the live page and an archive copy. **Research log** at the bottom of each check shows every search and page read.
+On the home list, swipe a check left (phone) or right-click it (computer) to archive it (with Undo) or delete it. Deleting keeps its sources in the library. **Research log** at the bottom of each check shows every search and page read.
 
 ## 4. Where things are in the code
 
@@ -48,22 +48,23 @@ Every receipt opens our saved copy with the exact passage highlighted, plus the 
 |---|---|
 | 1 · Intake, security, API | `backend/factcheck/routes.py` |
 | 2 · Capture | `backend/factcheck/capture.py` |
-| 3 · Claim extraction, 4 · Triage | `backend/factcheck/extract.py` |
+| 3 · The one central claim | `backend/factcheck/extract.py` |
 | 5 · Provenance trace, 6 · Compare, receipt check, Opus retry | `backend/factcheck/tracer.py` |
-| 7 · Context + second opinions | `backend/factcheck/context.py` |
+| 7 · Context + second opinions (off since v0.6) | `backend/factcheck/context.py` |
 | Orchestration, queue, archiving | `backend/factcheck/pipeline.py` |
 | Source library, chains, rabbit-hole events, research log | `backend/factcheck/db.py` (SQLite at `DATA_DIR/factcheck/library.db`) |
 | Reading pages, archive.org, fact-check links | `backend/factcheck/web.py` |
 | Spending guard | `backend/factcheck/budget.py` |
 | Settings and limits | `backend/factcheck/config.py` |
-| Phone app | `frontend/check.html`, `frontend/js/check.js`, `frontend/css/check.css` |
+| Phone app | `frontend/check.html`, `frontend/js/check.js`, `frontend/css/check.css`, animations: `frontend/js/motion.min.js` (Motion 12.23.12, MIT) |
 
 ## 5. Tests
 
 ```
-python3 tests/test_factcheck_offline.py    # 47 checks: links, frames, receipt check, library, tracer tools, triage, routes, security
-python3 tests/test_factcheck_pipeline.py   # 17 checks: the whole pipeline with a scripted stand-in for Claude and a fake web
+python3 tests/test_factcheck_offline.py    # 69 checks: links, frames, receipt check, library, tracer tools, triage, routes, security
+python3 tests/test_factcheck_pipeline.py   # 18 checks: the whole pipeline with a scripted stand-in for Claude and a fake web
 python3 tests/test_factcheck_pipeline.py --serve   # same, then serves the app on :5077 with the test data (password: test-password-123)
+python3 tests/test_factcheck_pipeline.py --slow    # serves the app while a slowed-down check runs, to watch the live view
 ```
 
 Neither test needs an API key or the internet. They do not test real search results, real pages or real Claude judgment. That is what the pilot evaluation's gold set is for.

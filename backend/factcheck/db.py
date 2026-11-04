@@ -110,6 +110,9 @@ create table if not exists hops (
   mutation text default 'none',
   mutation_note text default '',
   source_type text default '',
+  compare text default '',
+  paraphrase text default '',
+  source_name text default '',
   attempt integer default 1,
   dropped integer default 0,
   created_at text not null
@@ -217,7 +220,9 @@ def init():
             except sqlite3.OperationalError:
                 pass  # sqlite without FTS5: search falls back to LIKE
             # Columns added after the first deploy (databases created earlier lack them).
-            for table, col, decl in [("hops", "source_type", "text default ''")]:
+            for table, col, decl in [("hops", "source_type", "text default ''"), ("hops", "compare", "text default ''"),
+                                     ("hops", "paraphrase", "text default ''"), ("hops", "source_name", "text default ''"),
+                                     ("checks", "archived", "integer default 0")]:
                 cols = {r[1] for r in con.execute(f"pragma table_info({table})").fetchall()}
                 if col not in cols:
                     con.execute(f"alter table {table} add column {col} {decl}")
@@ -297,9 +302,9 @@ def merge_check_data(cid, **patch):
         return data
 
 
-def list_checks(limit=100):
+def list_checks(limit=100, archived=False):
     with conn() as c:
-        rows = c.execute("select * from checks order by created_at desc limit ?", (limit,)).fetchall()
+        rows = c.execute("select * from checks where coalesce(archived,0)=? order by created_at desc limit ?", (1 if archived else 0, limit)).fetchall()
         out = []
         for r in rows:
             d = row(r)
@@ -308,6 +313,31 @@ def list_checks(limit=100):
             d.pop("transcript", None)
             out.append(d)
         return out
+
+
+def count_archived():
+    with conn() as c:
+        return c.execute("select count(*) from checks where coalesce(archived,0)=1").fetchone()[0]
+
+
+def set_archived(cid, archived=True):
+    with conn() as c:
+        c.execute("update checks set archived=?, updated_at=? where id=?", (1 if archived else 0, now(), cid))
+
+
+def delete_check(cid):
+    """Deletes a check and its chains. The source library (sources, passages, who-cites-whom) is kept."""
+    with conn() as c:
+        claim_ids = [r[0] for r in c.execute("select id from claims where check_id=?", (cid,)).fetchall()]
+        for clid in claim_ids:
+            c.execute("delete from hops where claim_id=?", (clid,))
+            try:
+                c.execute("delete from claims_fts where claim_id=?", (clid,))
+            except sqlite3.OperationalError:
+                pass
+        for table in ("claims", "voices", "second_opinions", "events", "audit"):
+            c.execute(f"delete from {table} where check_id=?", (cid,))
+        c.execute("delete from checks where id=?", (cid,))
 
 
 def stale_running_checks():
@@ -482,12 +512,15 @@ def add_citation(from_source, to_source, context=""):
 
 # ---------- hops ----------
 
-def add_hop(claim_id, source_id, passage_id, kind, says, cites, mutation, mutation_note, attempt=1, source_type=""):
+def add_hop(claim_id, source_id, passage_id, kind, says, cites, mutation, mutation_note, attempt=1, source_type="",
+            compare="", paraphrase="", source_name=""):
     with conn() as c:
         pos = (c.execute("select coalesce(max(position),0) from hops where claim_id=? and dropped=0", (claim_id,)).fetchone()[0] or 0) + 1
-        cur = c.execute("""insert into hops (claim_id, position, source_id, passage_id, kind, says, cites, mutation, mutation_note, attempt, source_type, created_at)
-                           values (?,?,?,?,?,?,?,?,?,?,?,?)""",
-                        (claim_id, pos, source_id, passage_id, kind, says, cites, mutation, mutation_note, attempt, source_type, now()))
+        cur = c.execute("""insert into hops (claim_id, position, source_id, passage_id, kind, says, cites, mutation, mutation_note, attempt,
+                           source_type, compare, paraphrase, source_name, created_at)
+                           values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (claim_id, pos, source_id, passage_id, kind, says, cites, mutation, mutation_note, attempt,
+                         source_type, compare, paraphrase, source_name, now()))
         return cur.lastrowid, pos
 
 
@@ -511,7 +544,7 @@ def chain_for(claim_id):
     """Hops with their source and passage attached, ready for the report."""
     with conn() as c:
         rows = c.execute("""
-          select h.*, s.url, s.title, s.publisher, s.author, s.published_at, s.archive_url, s.final_url, s.content_hash, s.previous_hash,
+          select h.*, s.url, s.title, s.publisher, s.author, s.published_at, s.archive_url, s.final_url, s.content_hash, s.previous_hash, s.fetched_via,
                  p.text as passage, p.location as passage_location
           from hops h join sources s on s.id=h.source_id left join passages p on p.id=h.passage_id
           where h.claim_id=? and h.dropped=0 order by h.position""", (claim_id,)).fetchall()

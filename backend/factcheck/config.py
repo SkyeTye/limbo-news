@@ -36,7 +36,7 @@ RETRY_MODEL = os.environ.get("FACTCHECK_RETRY_MODEL", "claude-opus-5-5")
 OPUS_RETRY = _flag("FACTCHECK_OPUS_RETRY", True)
 
 # Budgets per claim. The central claim gets the full budget, claims 2 and 3 get less.
-MAX_CLAIMS = int(_num("FACTCHECK_MAX_CLAIMS", 3))
+MAX_CLAIMS = 1  # v0.6: one central claim per video
 CENTRAL_HOPS = int(_num("FACTCHECK_CENTRAL_HOPS", 6))
 CENTRAL_READS = int(_num("FACTCHECK_CENTRAL_READS", 12))
 OTHER_HOPS = int(_num("FACTCHECK_OTHER_HOPS", 4))

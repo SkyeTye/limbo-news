@@ -7,7 +7,7 @@ import threading
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 
-from . import budget, capture, config, context, db, extract, tracer, web
+from . import budget, capture, config, db, extract, tracer, web
 
 _q = queue.Queue()
 _current = {"id": None}
@@ -86,6 +86,7 @@ def frames_dir(check_id):
 
 
 def run_check(check_id):
+    """v0.6 flow: capture -> the ONE central claim -> trace it live. No context stage."""
     check = db.get_check(check_id)
     if not check:
         return
@@ -94,13 +95,18 @@ def run_check(check_id):
     def step(s):
         db.update_check(check_id, step=s)
 
+    def early(**kw):
+        fields = {k: v for k, v in kw.items() if v not in (None, "")}
+        if fields:
+            db.update_check(check_id, **fields)
+
     try:
         db.update_check(check_id, status="running", step="Starting", error="")
         budget.take_check()
         budget.ensure_ai()
 
-        # 2 · Capture
-        packet = capture.capture(check["url"], frames_dir(check_id), progress=step)
+        # 2 · Capture (the transcript is saved as soon as it exists, so the phone can show it)
+        packet = capture.capture(check["url"], frames_dir(check_id), progress=step, on_update=early)
         warnings += packet["warnings"]
         frames_meta = [{"t": f["t"], "name": f["name"]} for f in packet["frames"]]
         db.update_check(check_id, creator=packet["creator"], posted_at=packet["posted_at"], caption=packet["caption"],
@@ -110,38 +116,26 @@ def run_check(check_id):
         if not (packet["transcript"] or packet["caption"] or packet["frames"]):
             raise RuntimeError("Nothing to check: no video, transcript or caption could be fetched. " + " ".join(warnings))
 
-        # 3 · Claim extraction, 4 · Triage
-        step("Finding the claims")
+        # 3 · The one central claim
+        step("Finding the central claim")
         extracted = extract.extract(packet)
-        claims = extract.triage(packet, extracted)
-        db.update_check(check_id, thesis=extracted.get("thesis", ""), title=extracted.get("title", "") or packet.get("title", ""))
-        for i, c in enumerate(claims):
-            db.add_claim(check_id, i, quote=c["quote"], claim=c["claim"], timestamp=c.get("timestamp", ""), seconds=c.get("seconds"),
-                         where_said=c.get("where", ""), type=c["type"], stated_source=c.get("stated_source", ""),
-                         central=1 if c.get("central") else 0, rank=c.get("rank", 99),
-                         quote_verified=1 if c.get("quote_verified") else 0, status=c["status"])
-        if not any(c["status"] == "queued" for c in claims):
-            warnings.append("No checkable factual claims were found in this video.")
+        db.update_check(check_id, title=extracted.get("title", "") or packet.get("title", ""))
+        c = extract.central_claim(packet, extracted)
+        if not c:
+            db.merge_check_data(check_id, no_claim=extracted.get("why_not") or "This video makes no specific factual claim to check.")
+            db.merge_check_data(check_id, warnings=warnings)
+            db.update_check(check_id, status="done", step="")
+            return
+        db.add_claim(check_id, 0, quote=c["quote"], claim=c["claim"], timestamp=c.get("timestamp", ""), seconds=c.get("seconds"),
+                     where_said=c.get("where", ""), type=c["type"], stated_source=c.get("stated_source", ""),
+                     central=1, rank=1, quote_verified=1 if c.get("quote_verified") else 0, status="queued")
 
-        # 5 · Trace, 6 · Compare (in parallel, central claim first)
+        # 5 · Trace, 6 · Compare (watched live on the phone)
         _trace_queued(check_id, packet["transcript"], step)
 
-        # 7 · Context + second opinions
-        step("Adding context and second opinions")
-        check = db.get_check(check_id)
-        try:
-            ctx = context.run_context(check, db.claims_for(check_id))
-            if ctx:
-                db.merge_check_data(check_id, left_out=ctx.get("left_out", []), overall=ctx.get("bottom_line", ""))
-        except budget.BudgetError as e:
-            warnings.append(e.public)
-        except Exception as e:
-            traceback.print_exc()
-            warnings.append(f"Context could not be added ({str(e)[:100]}).")
-
         final = db.claims_for(check_id)
-        failed = any(c["status"] == "failed" for c in final)
-        db.merge_check_data(check_id, warnings=warnings, context_progress="")
+        failed = any(x["status"] == "failed" for x in final)
+        db.merge_check_data(check_id, warnings=warnings)
         db.update_check(check_id, status="partial" if (failed or warnings) else "done", step="")
     except budget.BudgetError as e:
         db.merge_check_data(check_id, warnings=warnings)
@@ -157,7 +151,7 @@ def _trace_queued(check_id, transcript, step):
     queued = [c for c in db.claims_for(check_id) if c["status"] == "queued"]
     if not queued:
         return
-    step(f"Tracing {len(queued)} claim{'s' if len(queued) != 1 else ''} to the origin")
+    step("Tracing the claim to where it started")
 
     def one(c):
         try:

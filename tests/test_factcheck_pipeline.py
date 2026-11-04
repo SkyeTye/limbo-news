@@ -10,7 +10,9 @@ sys.path.insert(0, ROOT)
 TMP = tempfile.mkdtemp(prefix="fc-pipe-")
 os.environ.update(DATA_DIR=TMP, FACTCHECK_PASSWORD="test-password-123", BUDGET_OFF="1", ANTHROPIC_API_KEY="test")
 
+import threading, time
 from anthropic.types import Message, ToolUseBlock, Usage
+SLOW = "--slow" in sys.argv   # serve the app while the check runs slowly, to watch the live view
 from backend.factcheck import capture, config, context, db, llm, pipeline, tracer, web
 
 # ---------- fake web ----------
@@ -45,7 +47,11 @@ tracer.web_search = fake_search
 # ---------- fake capture (real frames from a generated video) ----------
 vid = os.path.join(TMP, "v.mp4")
 subprocess.run([capture.ffmpeg_bin(), "-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=s=360x640:d=10", "-pix_fmt", "yuv420p", vid], check=True)
-def fake_capture(url, frames_dir, progress=lambda s: None):
+def fake_capture(url, frames_dir, progress=lambda s: None, on_update=lambda **kw: None):
+    if SLOW: progress("Fetching the post"); time.sleep(2)
+    on_update(creator="@phonefacts", posted_at="2026-10-20", caption="Wake up parents #screentime",
+              transcript="[0:02] A Stanford study shows 70% of teens are addicted to their phones.\n[0:06] Parents need to wake up.\n[0:08] Screen time has doubled since 2019.")
+    if SLOW: time.sleep(3)
     progress("Watching the video")
     frames, _ = capture.extract_frames(vid, 10, frames_dir)
     return {"found": True, "platform": "TT", "creator": "@phonefacts", "title": "", "caption": "Wake up parents #screentime",
@@ -69,17 +75,18 @@ def sid_of(url):
 
 def fake_create(**kw):
     calls["n"] += 1
+    if SLOW: time.sleep(2.2)
     model = kw["model"]
     bp = sum(1 for m in kw["messages"] if isinstance(m["content"], list) for b in m["content"] if isinstance(b, dict) and "cache_control" in b)
     calls["max_breakpoints"] = max(calls["max_breakpoints"], bp)
-    if any(t["name"] == "record_claims" for t in kw.get("tools", [])):
+    if any(t["name"] == "record_central_claim" for t in kw.get("tools", [])):
         assert kw.get("tool_choice", {}).get("type") != "tool", "forced tool_choice is rejected by current models"
         imgs = sum(1 for b in kw["messages"][0]["content"] if b.get("type") == "image")
         assert imgs >= 3, "frames were sent to Claude"
-        return msg(model, "record_claims", {"title": "Stanford study on teen phone addiction", "thesis": "Teens are addicted to phones and parents must act.", "claims": [
-            {"quote": "A Stanford study shows 70% of teens are addicted to their phones.", "claim": "A Stanford study found 70% of teens are addicted to their phones", "timestamp": "0:02", "where": "speech", "type": "study", "stated_source": "a Stanford study", "central": True, "checkworthy": 3},
-            {"quote": "Parents need to wake up.", "claim": "Parents need to act", "timestamp": "0:06", "where": "speech", "type": "opinion", "stated_source": "", "central": False, "checkworthy": 0},
-            {"quote": "Screen time has doubled since 2019.", "claim": "Teen screen time doubled between 2019 and 2026", "timestamp": "0:08", "where": "speech", "type": "statistic", "stated_source": "", "central": False, "checkworthy": 2}]})
+        assert imgs <= 10, "at most 10 frames for extraction"
+        return msg(model, "record_central_claim", {"title": "Stanford study on teen phone addiction", "checkable": True,
+            "quote": "A Stanford study shows 70% of teens are addicted to their phones.", "claim": "A Stanford study found 70% of teens are addicted to their phones",
+            "timestamp": "0:02", "where": "speech", "type": "study", "stated_source": "a Stanford study"})
     system = kw["system"][0]["text"]
     user0 = kw["messages"][0]["content"][0]["text"]
     turn = sum(1 for m in kw["messages"] if m["role"] == "assistant")
@@ -92,21 +99,22 @@ def fake_create(**kw):
                      ("complete_trace", {"ending": "dead_end", "verdict": "no_origin_found", "confidence": "low", "bottom_line": "We could not find where this number comes from.", "video_vs_origin": "", "mutations": [], "unknowns": ["Any source for 'doubled'."]})]
         elif "A FIRST TRACER" in user0:  # the Opus retry continues the chain
             steps = [("read_source", {"url": "https://news.example.org/stanford-phone-study"}),
-                     ("record_hop", {"source_id": sid_of("https://news.example.org/stanford-phone-study"), "passage": "Stanford researchers surveyed 1,200 teens and found that 31% met criteria for problematic phone use", "kind": "secondary", "source_type": "news_or_analysis", "says": "Reports 31% problematic use", "cites": "https://stanford.example.edu/paper.pdf", "mutation": "number_changed", "mutation_note": "Video says 70% addicted; this says 31% problematic use."}),
+                     ("record_hop", {"source_id": sid_of("https://news.example.org/stanford-phone-study"), "passage": "Stanford researchers surveyed 1,200 teens and found that 31% met criteria for problematic phone use", "kind": "secondary", "source_type": "news_or_analysis", "source_name": "Src", "compare": "Reports 31% problematic use", "cites": "https://stanford.example.edu/paper.pdf", "mutation": "number_changed", "mutation_note": "Video says 70% addicted; this says 31% problematic use."}),
                      ("read_source", {"url": "https://stanford.example.edu/paper.pdf"}),
-                     ("record_hop", {"source_id": sid_of("https://stanford.example.edu/paper.pdf"), "passage": "31% met criteria for problematic smartphone use, and 70% reported checking their phone within five minutes of waking", "kind": "primary", "source_type": "study_or_dataset", "says": "31% problematic use; 70% check phone soon after waking", "cites": "nothing", "mutation": "other", "mutation_note": "The 70% is about checking phones after waking, not addiction."}),
-                     ("complete_trace", {"ending": "origin_found", "verdict": "stretched", "confidence": "high", "bottom_line": "The study is real, but it found 31% had problematic use. The 70% figure is about checking phones after waking, not addiction.", "video_vs_origin": "Video: 70% addicted. Study: 31% problematic use (not a diagnosis); 70% check their phone within five minutes of waking.", "mutations": [{"type": "number_changed", "note": "31% became 70%"}], "unknowns": []})]
+                     ("record_hop", {"source_id": sid_of("https://stanford.example.edu/paper.pdf"), "passage": "31% met criteria for problematic smartphone use, and 70% reported checking their phone within five minutes of waking", "kind": "primary", "source_type": "study_or_dataset", "source_name": "Src", "compare": "31% problematic use; 70% check phone soon after waking", "cites": "nothing", "mutation": "other", "mutation_note": "The 70% is about checking phones after waking, not addiction."}),
+                     ("complete_trace", {"ending": "origin_found", "verdict": "stretched", "confidence": "high", "bottom_line": "The study is real, but it found 31% problematic use; the 70% is about checking phones after waking.", "video_vs_origin": "Video: 70% addicted. Study: 31% problematic use (not a diagnosis); 70% check their phone within five minutes of waking.", "mutations": [{"type": "number_changed", "note": "31% became 70%"}], "unknowns": []})]
         else:  # first Sonnet pass: one hop, one deliberate misquote, then stops
             steps = [("search_library", {"query": "Stanford 70% teens addicted phones"}),
                      ("factcheck_leads", {"query": "70% teens addicted phones Stanford"}),
                      ("web_search", {"query": "Stanford study 70% teens addicted phones"}),
                      ("read_source", {"url": "https://dailyviral.example.com/teens-phones"}),
-                     ("record_hop", {"source_id": sid_of("https://dailyviral.example.com/teens-phones"), "passage": "Stanford proved 70 percent of teens are addicted", "kind": "secondary", "says": "x", "cites": "y", "mutation": "none", "mutation_note": ""}),
-                     ("record_hop", {"source_id": sid_of("https://dailyviral.example.com/teens-phones"), "passage": "A Stanford study shows 70% of teens are addicted to their phones", "kind": "secondary", "source_type": "news_or_analysis", "says": "Repeats the 70% claim", "cites": "https://news.example.org/stanford-phone-study", "mutation": "none", "mutation_note": ""}),
+                     ("record_hop", {"source_id": sid_of("https://dailyviral.example.com/teens-phones"), "passage": "Stanford proved 70 percent of teens are addicted", "kind": "secondary", "source_name": "Src", "compare": "x", "cites": "y", "mutation": "none", "mutation_note": ""}),
+                     ("record_hop", {"source_id": sid_of("https://dailyviral.example.com/teens-phones"), "passage": "A Stanford study shows 70% of teens are addicted to their phones", "kind": "secondary", "source_type": "news_or_analysis", "source_name": "Src", "compare": "Repeats the 70% claim", "cites": "https://news.example.org/stanford-phone-study", "mutation": "none", "mutation_note": ""}),
                      ("complete_trace", {"ending": "stopped", "verdict": "no_origin_found", "confidence": "low", "bottom_line": "Ran out of budget.", "video_vs_origin": "", "mutations": [], "unknowns": []})]
         name, inp = steps[min(turn, len(steps) - 1)]
         return msg(model, name, inp)
     if system.startswith("You add context"):
+        raise AssertionError("v0.6 has no context stage")
         central = next(c for c in db.claims_for(cid) if c["central"])
         steps = [("read_source", {"url": "https://critic.example.com/op-ed"}),
                  ("record_voice", {"claim_id": central["id"], "name": "Dr. Lee Park", "affiliation": "psychologist", "stance": "disputes", "quote": "calling everyday phone habits an addiction confuses a common habit with a disorder", "source_id": sid_of("https://critic.example.com/op-ed")}),
@@ -120,7 +128,18 @@ def fake_create(**kw):
 llm.client = lambda: type("C", (), {"messages": type("M", (), {"create": staticmethod(fake_create)})()})()
 
 # ---------- run ----------
+if SLOW:
+    from backend import server  # importing starts the worker, which flags leftover queued checks; do it first
 cid = db.create_check("https://www.tiktok.com/@phonefacts/video/123", "https://www.tiktok.com/@phonefacts/video/123", "TT")
+if SLOW:
+    for i in range(3):  # a few finished checks for the home list
+        other = db.create_check(f"https://www.tiktok.com/@x/video/{i}", f"https://www.tiktok.com/@x/video/{i}", "TT"); db.update_check(other, status="done", title=f"Older check {i + 1}", creator="@someone")
+    def later():
+        time.sleep(6); pipeline.run_check(cid)
+    threading.Thread(target=later, daemon=True).start()
+    print("serving slow on http://127.0.0.1:5077  check id:", cid, flush=True)
+    server.app.run(host="127.0.0.1", port=5077, debug=False)
+    sys.exit(0)
 pipeline.run_check(cid)
 pipeline._archive_q.queue.clear() if hasattr(pipeline._archive_q, "queue") else None
 
@@ -137,9 +156,8 @@ def expect(cond, m):
 
 print("pipeline")
 expect(check["status"] in ("done", "partial"), f"check finished ({check['status']}, error={check['error']!r})")
-expect(check["thesis"].startswith("Teens are addicted"), "thesis saved")
+expect(check["title"].startswith("Stanford study"), "title saved (no thesis in v0.6)")
 expect(len(check["data"]["frames"]) >= 5, "frames saved for the report")
-expect([c["status"] for c in claims].count("opinion") == 1, "opinion labeled, not traced")
 expect(central["verdict"] == "stretched" and central["ending"] == "origin_found" and central["confidence"] == "high", "central claim: Opus retry reached the origin")
 expect([a["model"] for a in central["data"]["attempts"]] == [config.TRACE_MODEL, config.RETRY_MODEL], "first Sonnet pass, then one Opus retry")
 expect([h["kind"] for h in chain] == ["secondary", "secondary", "primary"], "chain: viral post -> news story -> study")
@@ -147,14 +165,13 @@ expect(chain[1]["mutation"] == "number_changed", "mutation recorded on the hop w
 expect([h["source_type"] for h in chain] == ["news_or_analysis", "news_or_analysis", "study_or_dataset"], "source types recorded on every hop")
 expect(calls["rejections_seen"] >= 1, "misquoted passage was rejected and the agent saw the rejection")
 expect(central["data"]["factchecks"][0]["rating"] == "Mostly False", "fact-check rating stored for later, not shown to the tracer")
-second = next(c for c in claims if c["claim"].startswith("Teen screen time"))
-expect(second["ending"] == "dead_end" and second["verdict"] == "no_origin_found" and len(second["data"]["attempts"]) == 1, "secondary claim: no Opus retry")
-voices = db.voices_for(cid)
-expect(len(voices) == 2 and {v["stance"] for v in voices} == {"disputes", "qualifies"}, "named voices with receipt-checked quotes")
-expect(db.second_opinions_for(cid)[0]["agrees"] == "yes", "second opinion recorded after the verdict")
-expect(len(check["data"]["left_out"]) == 2, "what the video leaves out")
+expect(len(claims) == 1 and claims[0]["central"], "one central claim, nothing else extracted")
+expect(chain[0]["source_name"] == "Src" and chain[0]["compare"], "each step has a source name and a one-line comparison")
+expect(central["data"]["progress"]["steps"], "live activity feed saved")
+expect(not db.voices_for(cid) and not db.second_opinions_for(cid), "no context stage (voices / second opinions) in v0.6")
+expect(check["transcript"].startswith("[0:02]"), "transcript saved for line-by-line display")
 expect(calls["max_breakpoints"] <= 1, "one rolling cache breakpoint in messages")
-expect(len(db.audit_for(cid)) >= 15, f"research log has every step ({len(db.audit_for(cid))} entries)")
+expect(len(db.audit_for(cid)) >= 10, f"research log has every step ({len(db.audit_for(cid))} entries)")
 with db.conn() as c:
     expect(c.execute("select count(*) from citations").fetchone()[0] >= 2, "who-cites-whom edges")
 print(f"\nALL {ok} PIPELINE CHECKS PASSED · {calls['n']} scripted Claude calls")

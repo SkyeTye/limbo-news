@@ -40,7 +40,12 @@
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return u || ""; } };
   const day = (s) => { if (!s) return ""; const d = new Date(s); return isNaN(d) ? String(s).slice(0, 10) : d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); };
-  const toast = (msg) => { const t = document.getElementById("toast"); t.textContent = msg; t.classList.add("on"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("on"), 2600); };
+  const toast = (msg, actLabel, actFn) => {
+    const t = document.getElementById("toast");
+    t.innerHTML = esc(msg) + (actLabel ? ` <button class="toast-act">${esc(actLabel)}</button>` : "");
+    if (actLabel) t.querySelector(".toast-act").onclick = () => { t.classList.remove("on"); actFn && actFn(); };
+    t.classList.add("on"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("on"), actLabel ? 5000 : 2600);
+  };
   const chip = (v, big) => { const [label, cls] = VERDICT[v] || ["Pending", "v-gray"]; return `<span class="chip ${cls}${big ? " big" : ""}">${esc(label)}</span>`; };
 
   async function api(path, opts = {}) {
@@ -92,11 +97,12 @@
     $nav.innerHTML = `<a href="/check/settings" data-nav>Settings</a>`;
     if (path === "/check/share") return handleShare();
     if (path === "/check/settings") return renderSettings();
+    if (path === "/check/archived") return renderHome(true);
     let m;
     if ((m = path.match(/^\/check\/source\/([\w-]+)$/))) return renderSource(m[1]);
     if ((m = path.match(/^\/check\/log\/([\w-]+)$/))) return renderLog(m[1]);
     if ((m = path.match(/^\/check\/([\w-]+)$/))) return renderCheck(m[1]);
-    return renderHome();
+    return renderHome(false);
   }
 
   // ---------- login ----------
@@ -123,184 +129,465 @@
     catch (e) { $app.innerHTML = `<div class="card">${esc(e.message)}</div>`; }
   }
 
+  // ---------- motion helpers (Motion, vendored at /js/motion.min.js) ----------
+  const M = window.Motion || null;
+  const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const SPRING = { type: "spring", stiffness: 260, damping: 30, mass: 1 };
+  const SOFT = { type: "spring", stiffness: 170, damping: 26 };
+  function anim(el, kf, opts) {
+    if (!el) return;
+    if (!M || reduce) { for (const k of Object.keys(kf)) { const v = kf[k]; const last = Array.isArray(v) ? v[v.length - 1] : v; if (k === "opacity") el.style.opacity = last; } return; }
+    try { return M.animate(el, kf, opts || SPRING); } catch {}
+  }
+  // FLIP: record where elements are, change the DOM, then spring them from the old place to the new one.
+  function flip(els, mutate) {
+    const live = els.filter(Boolean);
+    const before = live.map((el) => el.getBoundingClientRect().top);
+    mutate();
+    if (!M || reduce) return;
+    live.forEach((el, i) => {
+      const dy = before[i] - el.getBoundingClientRect().top;
+      if (Math.abs(dy) > 1) anim(el, { y: [dy, 0] }, SOFT);
+    });
+  }
+  function wordsIn(el) {
+    if (!M || reduce || !el) return;
+    const text = el.textContent;
+    el.innerHTML = text.split(/(\s+)/).map((w) => (/^\s+$/.test(w) ? w : `<span class="w">${esc(w)}</span>`)).join("");
+    M.animate(el.querySelectorAll(".w"), { opacity: [0, 1], y: [6, 0], filter: ["blur(4px)", "blur(0px)"] }, { delay: M.stagger(0.025), duration: 0.35, ease: "easeOut" });
+  }
+
   // ---------- home ----------
-  async function renderHome() {
+  async function renderHome(showArchived) {
     $app.innerHTML = `<div class="stack">
-      <form class="newcheck" id="nc"><input type="url" id="nurl" inputmode="url" placeholder="Paste a TikTok, Instagram, YouTube or X link" required>
-      <button class="btn" type="submit">Check</button></form>
-      <div id="list"><p class="muted small">Loading…</p></div></div>`;
-    document.getElementById("nc").onsubmit = async (e) => {
+      ${showArchived ? `<div class="row"><a class="btn sm line" href="/check" data-nav>‹ Back</a><h2 style="margin:0">Archived</h2></div>`
+        : `<form class="newcheck" id="nc"><input type="url" id="nurl" inputmode="url" placeholder="Paste a TikTok, Instagram, YouTube or X link" required>
+      <button class="btn" type="submit">Check</button></form>`}
+      <ul class="list swipe" id="list"><li class="muted small" style="padding:12px 0">Loading…</li></ul>
+      <div id="archlink"></div>
+      <p class="tiny muted hint">${matchMedia("(hover: hover)").matches ? "Right-click a check to archive or delete it." : "Swipe a check left to archive or delete it."}</p></div>`;
+    const nc = document.getElementById("nc");
+    if (nc) nc.onsubmit = async (e) => {
       e.preventDefault();
       try { const r = await post("/api/check", { url: document.getElementById("nurl").value }); if (r.duplicate) toast("Already checked. Opening it."); navigate(`/check/${r.id}`); }
       catch (err) { if (err.message !== "auth") toast(err.message); }
     };
+    await refreshList(showArchived, true);
+  }
+  async function refreshList(showArchived, first) {
     let data;
-    try { data = await api("/api/checks"); } catch { return; }
+    try { data = await api("/api/checks" + (showArchived ? "?archived=1" : "")); } catch { return; }
     const el = document.getElementById("list");
+    if (!el) return;
     if (!data.checks.length) {
-      el.innerHTML = `<div class="card stack small"><b>No checks yet.</b><p>Paste a link above, or share a video straight from TikTok or Instagram with the Shortcut (see <a href="/check/settings" data-nav>Settings</a>).</p></div>`;
-      return;
+      el.innerHTML = showArchived ? `<li class="muted small" style="padding:12px 0">Nothing archived.</li>`
+        : `<li class="card stack small"><b>No checks yet.</b><p style="margin:0">Paste a link above, or share a video straight from TikTok or Instagram with the Shortcut (see <a href="/check/settings" data-nav>Settings</a>).</p></li>`;
+    } else {
+      el.innerHTML = data.checks.map((c) => itemHtml(c, showArchived)).join("");
+      el.querySelectorAll(".sw").forEach((li) => bindSwipe(li, showArchived));
+      if (first && M && !reduce) M.animate(el.querySelectorAll(".sw"), { opacity: [0, 1], y: [8, 0] }, { delay: M.stagger(0.03), duration: 0.3 });
     }
-    el.innerHTML = `<ul class="list">${data.checks.map(itemHtml).join("")}</ul>`;
-    if (data.checks.some((c) => ["queued", "running"].includes(c.status))) pollTimer = setTimeout(renderHomeQuiet, 5000);
+    const al = document.getElementById("archlink");
+    if (al) al.innerHTML = !showArchived && data.archived_count ? `<a class="small" href="/check/archived" data-nav>Archived (${data.archived_count})</a>` : "";
+    clearTimeout(pollTimer);
+    if (data.checks.some((c) => ["queued", "running"].includes(c.status))) pollTimer = setTimeout(() => {
+      const p = location.pathname.replace(/\/+$/, "");
+      if (p === "/check" || p === "/check/archived") refreshList(showArchived, false);
+    }, 4000);
   }
-  async function renderHomeQuiet() {
-    if (location.pathname.replace(/\/+$/, "") !== "/check") return;
-    try { const data = await api("/api/checks"); const el = document.getElementById("list"); if (el) el.innerHTML = `<ul class="list">${data.checks.map(itemHtml).join("")}</ul>`;
-      if (data.checks.some((c) => ["queued", "running"].includes(c.status))) pollTimer = setTimeout(renderHomeQuiet, 5000); } catch {}
-  }
-  function itemHtml(c) {
+  function itemHtml(c, archived) {
     const f = (c.data && c.data.frames && c.data.frames[Math.min(1, c.data.frames.length - 1)]) || null;
-    const thumb = f ? `<img class="thumb" src="/api/check/${c.id}/frames/${f.name}" alt="" loading="lazy">` : `<span class="thumb ph">${esc(c.platform)}</span>`;
+    const thumb = f ? `<img class="thumb" src="/api/check/${c.id}/frames/${f.name}" alt="" loading="lazy" draggable="false">` : `<span class="thumb ph">${esc(c.platform)}</span>`;
     const running = ["queued", "running"].includes(c.status);
     const state = running ? `<span class="chip v-gray"><span class="spin"></span>${esc(c.step || "Queued")}</span>`
       : c.status === "error" ? `<span class="chip v-red">Could not check</span>`
-      : c.central && c.central.verdict ? chip(c.central.verdict) : `<span class="chip v-gray">No checkable claims</span>`;
-    return `<li><a class="item" href="/check/${c.id}" data-nav>${thumb}<div style="min-width:0">
-      <div class="t">${esc(c.title || c.thesis || c.url)}</div>
-      <div class="m">${esc(PLATFORM[c.platform] || "")}${c.creator ? " · " + esc(c.creator) : ""} · ${esc(day(c.created_at))}</div>
-      <div class="c">${state}</div></div></a></li>`;
+      : c.central && c.central.verdict ? chip(c.central.verdict) : `<span class="chip v-gray">No claim to check</span>`;
+    const title = (c.central && c.central.claim) || c.title || c.url;
+    return `<li class="sw" data-id="${c.id}" data-running="${running ? 1 : 0}">
+      <div class="sw-actions">${archived
+        ? `<button class="sw-b sw-arch" data-do="restore">Restore</button><button class="sw-b sw-del" data-do="delete">Delete</button>`
+        : `<button class="sw-b sw-arch" data-do="archive">Archive</button><button class="sw-b sw-del" data-do="delete">Delete</button>`}</div>
+      <a class="item sw-front" href="/check/${c.id}" data-nav draggable="false">${thumb}<div style="min-width:0">
+        <div class="t">${esc(title)}</div>
+        <div class="m">${esc(PLATFORM[c.platform] || "")}${c.creator ? " · " + esc(c.creator) : ""} · ${esc(day(c.created_at))}</div>
+        <div class="c">${state}</div></div></a></li>`;
   }
 
-  // ---------- one check ----------
-  let lastCheck = null;
-  const openLadders = new Set();
+  // Mail-style swipe: drag left to reveal Archive / Delete; a long fast swipe archives straight away.
+  const OPEN_X = -168;
+  function bindSwipe(li, archived) {
+    const front = li.querySelector(".sw-front");
+    let x0 = 0, y0 = 0, dx = 0, base = 0, dragging = false, decided = false, horiz = false, moved = false, pid = null;
+    const setX = (x) => { if (M && !reduce) M.animate(front, { x }, { duration: 0 }); else front.style.transform = `translateX(${x}px)`; };
+    const settle = (to) => { li.dataset.open = to < 0 ? "1" : ""; if (M && !reduce) M.animate(front, { x: to }, SPRING); else front.style.transform = `translateX(${to}px)`; base = to; };
+    front.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      x0 = e.clientX; y0 = e.clientY; dx = 0; dragging = true; decided = false; horiz = false; moved = false; pid = e.pointerId;
+      base = li.dataset.open ? OPEN_X : 0;
+    });
+    front.addEventListener("pointermove", (e) => {
+      if (!dragging || e.pointerId !== pid) return;
+      const mx = e.clientX - x0, my = e.clientY - y0;
+      if (!decided && Math.abs(mx) + Math.abs(my) > 8) { decided = true; horiz = Math.abs(mx) > Math.abs(my); if (horiz) front.setPointerCapture(pid); }
+      if (!horiz) return;
+      moved = true;
+      dx = Math.min(40, base + mx);
+      if (dx > 0) dx = dx * 0.3;  // rubber band to the right
+      setX(dx);
+    });
+    const end = () => {
+      if (!dragging) return;
+      dragging = false;
+      if (!horiz) return;
+      const w = li.offsetWidth;
+      if (dx < -w * 0.62 && !archived) return doAction(li, "archive");
+      settle(dx < OPEN_X / 2 ? OPEN_X : 0);
+    };
+    front.addEventListener("pointerup", end);
+    front.addEventListener("pointercancel", end);
+    front.addEventListener("click", (e) => {
+      if (moved || li.dataset.open) { e.preventDefault(); e.stopPropagation(); if (li.dataset.open && !moved) settle(0); moved = false; }
+    }, true);
+    li.querySelectorAll(".sw-b").forEach((b) => b.addEventListener("click", (e) => { e.preventDefault(); doAction(li, b.dataset.do, b); }));
+    li.addEventListener("contextmenu", (e) => { e.preventDefault(); openMenu(e.clientX, e.clientY, li, archived); });
+  }
 
-  async function renderCheck(id, quiet) {
+  function closeMenu() { const m = document.getElementById("ctxmenu"); if (m) m.remove(); }
+  document.addEventListener("click", (e) => { if (!e.target.closest("#ctxmenu")) closeMenu(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenu(); });
+  window.addEventListener("scroll", closeMenu, { passive: true });
+  function openMenu(x, y, li, archived) {
+    closeMenu();
+    const m = document.createElement("div");
+    m.id = "ctxmenu"; m.setAttribute("role", "menu");
+    m.innerHTML = `<button role="menuitem" data-do="open">Open</button>
+      ${archived ? `<button role="menuitem" data-do="restore">Restore</button>` : `<button role="menuitem" data-do="archive">Archive</button>`}
+      <button role="menuitem" class="danger" data-do="delete">Delete…</button>`;
+    document.body.appendChild(m);
+    const r = m.getBoundingClientRect();
+    m.style.left = Math.min(x, innerWidth - r.width - 8) + "px";
+    m.style.top = Math.min(y, innerHeight - r.height - 8) + "px";
+    anim(m, { opacity: [0, 1], scale: [0.96, 1] }, { duration: 0.12 });
+    m.querySelectorAll("button").forEach((b) => b.onclick = (e) => {
+      e.stopPropagation(); closeMenu();
+      if (b.dataset.do === "open") return navigate(`/check/${li.dataset.id}`);
+      doAction(li, b.dataset.do);
+    });
+    m.querySelector("button").focus();
+  }
+
+  async function collapse(li) {
+    const front = li.querySelector(".sw-front");
+    if (M && !reduce) {
+      await M.animate(front, { x: -li.offsetWidth, opacity: 0 }, { duration: 0.22, ease: "easeIn" });
+      li.style.overflow = "hidden";
+      await M.animate(li, { height: [li.offsetHeight + "px", "0px"], opacity: [1, 0] }, { duration: 0.22 });
+    }
+    li.remove();
+  }
+  async function doAction(li, what, btn) {
+    const id = li.dataset.id;
+    try {
+      if (what === "delete") {
+        if (li.dataset.running === "1") return toast("Still running. Archive it, or wait for it to finish.");
+        if (!btn || btn.dataset.confirm !== "1") {
+          if (btn) { btn.dataset.confirm = "1"; btn.textContent = "Confirm"; setTimeout(() => { if (btn.isConnected) { btn.dataset.confirm = ""; btn.textContent = "Delete"; } }, 3500); return; }
+          return confirmSheet("Delete this check?", "Its steps and verdict are removed. Sources stay in your library.", async () => {
+            await api(`/api/check/${id}`, { method: "DELETE" }); await collapse(li); toast("Deleted"); refreshCounts();
+          });
+        }
+        await api(`/api/check/${id}`, { method: "DELETE" }); await collapse(li); toast("Deleted"); refreshCounts();
+        return;
+      }
+      const archived = what === "archive";
+      await post(`/api/check/${id}/archive`, { archived });
+      await collapse(li);
+      refreshCounts();
+      toast(archived ? "Archived" : "Restored", "Undo", async () => {
+        await post(`/api/check/${id}/archive`, { archived: !archived });
+        const p = location.pathname.replace(/\/+$/, "");
+        refreshList(p === "/check/archived", false);
+      });
+    } catch (e) { if (e.message !== "auth") toast(e.message); }
+  }
+  async function refreshCounts() {
+    const al = document.getElementById("archlink");
+    if (!al) return;
+    try { const d = await api("/api/checks?archived=1"); al.innerHTML = d.checks.length && location.pathname.replace(/\/+$/, "") === "/check" ? `<a class="small" href="/check/archived" data-nav>Archived (${d.checks.length})</a>` : ""; } catch {}
+    const list = document.getElementById("list");
+    if (list && !list.querySelector(".sw")) refreshList(location.pathname.replace(/\/+$/, "") === "/check/archived", false);
+  }
+  function confirmSheet(title, body, onYes) {
+    const d = document.createElement("div");
+    d.className = "sheet-wrap";
+    d.innerHTML = `<div class="sheet" role="dialog" aria-modal="true"><h3>${esc(title)}</h3><p class="small muted">${esc(body)}</p>
+      <div class="row"><button class="btn line" data-no>Cancel</button><button class="btn danger" data-yes>Delete</button></div></div>`;
+    document.body.appendChild(d);
+    anim(d.querySelector(".sheet"), { opacity: [0, 1], y: [20, 0] }, SPRING);
+    const close = () => d.remove();
+    d.addEventListener("click", (e) => { if (e.target === d) close(); });
+    d.querySelector("[data-no]").onclick = close;
+    d.querySelector("[data-yes]").onclick = async () => { close(); await onYes(); };
+    d.querySelector("[data-yes]").focus();
+  }
+
+  // ---------- one check: built live, step by step ----------
+  const ENDLABEL = {
+    origin_found: "This is where it started",
+    unsupported_assertion: "The trail starts with a claim that cites nothing",
+    circular: "The sources cite each other in a loop",
+    dead_end: "The trail goes cold here",
+    stopped: "Stopped here: the trace ran out of steps",
+  };
+  const KINDTAG = { primary: "Original source", secondary: "Repeats it", unsupported: "Cites nothing" };
+  const ACT_ICON = { search: "⌕", read: "◧", found: "✓", library: "▤", fail: "×", note: "·" };
+  let view = null;   // the live view for the check on screen
+
+  function stripMd(s) { return String(s || "").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[*_#>`]/g, "").replace(/\s+/g, " ").trim(); }
+  // Link to the original page, scrolled to the quote and highlighted (URL text fragments: Chrome, Edge, Safari 16.1+).
+  function fragmentUrl(hop) {
+    const base = hop.fetched_via === "wayback" && hop.archive_url ? hop.archive_url : (hop.final_url || hop.url);
+    if (!base || /\.pdf($|\?)/i.test(base)) return base;
+    const words = stripMd(hop.passage).split(" ").filter(Boolean);
+    if (!words.length) return base;
+    const enc = (s) => encodeURIComponent(s).replace(/-/g, "%2D").replace(/,/g, "%2C").replace(/&/g, "%26");
+    const frag = words.length <= 8 ? enc(words.join(" ")) : enc(words.slice(0, 5).join(" ")) + "," + enc(words.slice(-5).join(" "));
+    return base.split("#")[0] + "#:~:text=" + frag;
+  }
+
+  async function renderCheck(id) {
     let c;
     try { c = await api(`/api/check/${id}`); } catch (e) { if (e.message !== "auth") $app.innerHTML = `<div class="card">${esc(e.message)}</div>`; return; }
-    lastCheck = c;
     if (!viewedOnce.has(id)) { viewedOnce.add(id); event(id, { action: "view" }); }
-    const y = window.scrollY;
-    $app.innerHTML = checkHtml(c);
-    bindCheck(c);
-    if (quiet) window.scrollTo(0, y);
-    const busy = ["queued", "running"].includes(c.status) || c.claims.some((x) => ["queued", "tracing"].includes(x.status));
-    if (busy) pollTimer = setTimeout(() => { if (location.pathname.endsWith(id)) renderCheck(id, true); }, 3000);
-  }
-
-  function frameNear(c, seconds) {
-    const fr = (c.data && c.data.frames) || [];
-    if (!fr.length) return null;
-    if (seconds == null) return fr[Math.min(1, fr.length - 1)];
-    return fr.reduce((a, b) => (Math.abs(b.t - seconds) < Math.abs(a.t - seconds) ? b : a));
-  }
-
-  function checkHtml(c) {
-    const d = c.data || {};
-    const cover = frameNear(c, null);
-    const checked = c.claims.filter((x) => !["opinion", "unchecked"].includes(x.status));
-    const unchecked = c.claims.filter((x) => x.status === "unchecked");
-    const opinions = c.claims.filter((x) => x.status === "opinion");
-    const running = ["queued", "running"].includes(c.status);
-    let h = `<div class="stack">`;
-    h += `<div class="vhead">${cover ? `<img src="/api/check/${c.id}/frames/${cover.name}" alt="">` : ""}
-      <div class="stack" style="margin:0;min-width:0">
-        <div class="label">${esc(PLATFORM[c.platform] || "Video")}${c.posted_at ? " · posted " + esc(day(c.posted_at)) : ""}</div>
-        <h1>${esc(c.title || "Checking this video")}</h1>
-        <div class="small">${c.creator ? `<b>${esc(c.creator)}</b> · ` : ""}<a href="${esc(c.url)}" target="_blank" rel="noopener noreferrer" data-ev="open_video">Open the video</a></div>
+    $app.innerHTML = `<div class="cv" id="cv">
+      <header class="cv-head" id="cv-head"></header>
+      <section class="cv-claim" id="cv-claim"></section>
+      <section class="cv-trace" id="cv-trace" hidden>
+        <div class="label">Follow it back</div>
+        <ol class="tl" id="tl"></ol>
+      </section>
+      <div id="cv-below">
+        <section class="cv-unknowns" id="cv-unknowns" hidden></section>
+        <section class="cv-script" id="cv-script"></section>
+        <footer class="cv-foot" id="cv-foot"></footer>
       </div></div>`;
-    if (running) h += `<div class="status"><span class="spin"></span><span>${esc(c.step || "Queued")}…</span></div>`;
-    if (c.status === "error") h += `<div class="status err"><span>${esc(c.error || "Something went wrong.")}</span><button class="btn sm line" data-act="retry" style="margin-left:auto">Retry</button></div>`;
-    if (c.thesis) h += `<section class="stack"><div class="label">What this video wants you to believe</div><p class="thesis" style="margin:0">${esc(c.thesis)}</p></section>`;
-    if (d.overall) h += `<section class="stack"><div class="label">Bottom line</div><p style="margin:0">${esc(d.overall)}</p></section>`;
-    if (checked.length) h += `<section class="stack"><div class="label">Claims checked</div>${checked.map((x) => claimHtml(c, x)).join("")}</section>`;
-    else if (!running && c.status !== "error") h += `<div class="card small">No specific factual claims to check were found in this video.</div>`;
-    if (d.left_out && d.left_out.length) h += `<section class="card stack"><div class="label">What the video leaves out</div><ul class="plain">${d.left_out.map((s) => `<li>${esc(s)}</li>`).join("")}</ul></section>`;
-    if (unchecked.length) h += `<section class="card stack"><div class="label">Other claims, not checked yet</div>${unchecked.map((x) => `<div class="stack" style="margin-top:10px">
-        <div>${x.timestamp ? `<span class="ts">${esc(x.timestamp)}</span> ` : ""}${esc(x.claim)}</div>
-        <button class="btn sm line" data-act="trace" data-claim="${x.id}">Check this</button></div>`).join("")}</section>`;
-    if (opinions.length) h += `<details class="card"><summary>Opinions and predictions (${opinions.length})</summary><p class="small muted">These are views, not facts, so they aren't checked.</p><ul class="plain small">${opinions.map((x) => `<li>${x.timestamp ? `<span class="ts">${esc(x.timestamp)}</span> ` : ""}"${esc(x.quote)}"</li>`).join("")}</ul></details>`;
-    if (d.warnings && d.warnings.length) h += `<details class="small"><summary>Notes (${d.warnings.length})</summary><ul class="plain muted">${d.warnings.map((w) => `<li>${esc(w)}</li>`).join("")}</ul></details>`;
-    if (!running) h += `<p class="small"><a href="/check/log/${c.id}" data-nav>Research log</a> · <span class="muted">every search and page read for this check</span></p>`;
-    return h + `</div>`;
+    view = { id, nodes: new Map(), claimShown: false, transcriptKey: "", endShown: false, building: null, steps: 0 };
+    update(c, true);
   }
 
-  function claimHtml(c, x) {
-    const d = x.data || {};
-    const busy = ["queued", "tracing"].includes(x.status);
-    const fr = frameNear(c, x.seconds);
-    let h = `<article class="card stack claim" id="claim-${x.id}">`;
-    h += `<div class="top"><span class="label">${x.central ? "Central claim" : "Claim"}</span>
-      ${busy ? `<span class="chip v-gray"><span class="spin"></span>${esc(d.retrying ? "Second pass" : STEP_STATUS[x.status])}</span>`
-      : x.status === "failed" ? `<span class="chip v-red">Failed</span>`
-      : `<span class="row">${chip(x.verdict, x.central)}${x.confidence ? `<span class="conf">${esc(x.confidence)} confidence</span>` : ""}</span>`}</div>`;
-    h += `<p style="margin:0;font-weight:600">${esc(x.claim)}</p>`;
-    h += `<blockquote class="quote">${x.timestamp ? `<span class="ts">${esc(x.timestamp)}</span> ` : ""}"${esc(x.quote)}"${x.where_said === "on_screen" ? ` <span class="tiny muted">(on screen)</span>` : ""}${x.where_said === "caption" ? ` <span class="tiny muted">(caption)</span>` : ""}</blockquote>`;
-    if (x.stated_source) h += `<div class="small muted">Creator's stated source: ${esc(x.stated_source)}</div>`;
-    if (busy && d.progress) h += `<div class="prog">${d.progress.hops} step${d.progress.hops === 1 ? "" : "s"} found · ${d.progress.reads}/${d.progress.read_limit} pages read · ${esc(d.progress.last || "")}</div>`;
-    if (x.bottom_line) h += `<p class="bl" style="margin:0">${esc(x.bottom_line)}</p>`;
-    if (d.video_vs_origin) h += `<p class="diff" style="margin:0">${esc(d.video_vs_origin)}</p>`;
-    if (x.chain && x.chain.length || (!busy && x.ending)) {
-      const open = openLadders.has(x.id);
-      const n = x.chain.length;
-      h += `<button class="btn line follow" data-act="ladder" data-claim="${x.id}"><span>${open ? "Hide the receipts" : n ? "Follow the receipts" : "See where the trail ends"}</span><span class="n">${n ? `${n} step${n === 1 ? "" : "s"} ` : ""}${open ? "▲" : "▼"}</span></button>`;
-      if (open) h += ladderHtml(c, x, fr);
+  async function poll(id) {
+    if (!view || view.id !== id || !location.pathname.endsWith(id)) return;
+    try { update(await api(`/api/check/${id}`), false); } catch {}
+  }
+
+  function update(c, first) {
+    clearTimeout(pollTimer);
+    const claim = c.claims.find((x) => x.central) || c.claims[0] || null;
+    renderHead(c);
+    renderClaim(c, claim, first);
+    renderTimeline(c, claim, first);
+    renderUnknowns(claim);
+    renderTranscript(c, claim, first);
+    renderFoot(c);
+    const busy = ["queued", "running"].includes(c.status) || (claim && ["queued", "tracing"].includes(claim.status));
+    if (busy) pollTimer = setTimeout(() => poll(c.id), 2500);
+  }
+
+  function renderHead(c) {
+    const el = document.getElementById("cv-head");
+    const cover = (c.data && c.data.frames && c.data.frames[Math.min(1, c.data.frames.length - 1)]) || null;
+    const running = ["queued", "running"].includes(c.status);
+    const html = `${cover ? `<img src="/api/check/${c.id}/frames/${cover.name}" alt="">` : `<span class="ph">${esc(PLATFORM[c.platform] || "")}</span>`}
+      <div class="hmeta"><div class="small"><b>${esc(c.creator || "")}</b>${c.creator ? "" : `<span class="muted">${esc(PLATFORM[c.platform] || "Video")}</span>`}</div>
+      <div class="tiny muted">${esc(PLATFORM[c.platform] || "Video")}${c.posted_at ? " · posted " + esc(day(c.posted_at)) : ""} · <a href="${esc(c.url)}" target="_blank" rel="noopener noreferrer" data-ev="open_video">Open the video</a></div>
+      ${running && c.step && !(c.claims || []).length ? `<div class="stepline"><span class="pulse"></span>${esc(c.step)}…</div>` : ""}
+      ${c.status === "error" ? `<div class="errline">${esc(c.error || "Something went wrong.")} <button class="btn sm line" id="retry">Retry</button></div>` : ""}</div>`;
+    if (el.dataset.h !== html) {
+      el.dataset.h = html; el.innerHTML = html;
+      const r = document.getElementById("retry");
+      if (r) r.onclick = async () => { r.disabled = true; try { const x = await post(`/api/check/${c.id}/retry`); navigate(`/check/${x.id}`, true); } catch (e) { toast(e.message); r.disabled = false; } };
+      el.querySelectorAll("[data-ev]").forEach((a) => a.addEventListener("click", () => event(c.id, { action: a.dataset.ev })));
     }
-    if (d.unknowns && d.unknowns.length) h += `<div class="small"><div class="label">Still unknown</div><ul class="plain">${d.unknowns.map((u) => `<li>${esc(u)}</li>`).join("")}</ul></div>`;
-    const voices = (lastCheck.voices || []).filter((v) => v.claim_id === x.id);
-    if (voices.length) h += `<div class="voices"><div class="label">What people on each side say</div>${voices.map((v) => `<div class="v">
-        <div class="stance ${esc(v.stance)}">${esc(v.stance)}</div><div><b>${esc(v.name)}</b>${v.affiliation ? `, ${esc(v.affiliation)}` : ""}</div>
-        <div class="small">"${esc(v.quote)}"</div>
-        ${v.source_id ? `<a class="tiny" href="/check/source/${v.source_id}?check=${c.id}&claim=${x.id}&pid=${v.passage_id || ""}" data-nav>${esc(v.publisher || v.title || host(v.url))} ›</a>` : ""}</div>`).join("")}</div>`;
-    const seconds = (lastCheck.second_opinions || []).filter((s) => s.claim_id === x.id);
-    if (seconds.length) h += `<div class="small"><div class="label">Other fact-checkers (shown after our verdict)</div><ul class="plain">${seconds.map((s) => `<li>
-        <a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.publisher || host(s.url))}</a>: ${esc(s.rating || "no rating")}
-        <span class="chip ${s.agrees === "yes" ? "v-green" : s.agrees === "no" ? "v-red" : "v-amber"}" style="margin-left:4px">${s.agrees === "yes" ? "agrees" : s.agrees === "no" ? "disagrees" : "partly agrees"}</span>
-        ${s.note ? `<div class="muted">${esc(s.note)}</div>` : ""}</li>`).join("")}</ul></div>`;
-    if (!busy) h += `<div class="row">
-      ${d.deeper_article ? `<a class="btn sm line" href="/article/${esc(d.deeper_article)}">Deep research ›</a>` : `<button class="btn sm line" data-act="deeper" data-claim="${x.id}">Go deeper</button>`}
-      <button class="btn sm line" data-act="trace" data-claim="${x.id}">Re-check</button></div>`;
-    return h + `</article>`;
   }
 
-  function ladderHtml(c, x, fr) {
-    const max = x.chain.length;
-    let h = `<ol class="ladder">`;
-    h += `<li class="rung video"><div class="who">The video</div><div class="meta">${esc(c.creator || "")}${x.timestamp ? ` <span class="ts">${esc(x.timestamp)}</span>` : ""}</div>
-      ${fr ? `<img src="/api/check/${c.id}/frames/${fr.name}" alt="" style="width:96px;border-radius:8px;display:block;margin:4px 0">` : ""}
-      <div class="passage">"${esc(x.quote)}"</div></li>`;
-    x.chain.forEach((hop, i) => {
-      const depth = i + 1;
-      const q = `check=${c.id}&claim=${x.id}&pid=${hop.passage_id || ""}&depth=${depth}&max=${max}`;
-      h += `<li class="rung" data-n="${depth}">
-        <div class="who">${esc(hop.publisher || hop.title || host(hop.url))}</div>
-        <div class="meta"><span class="kind ${esc(hop.kind)}">${esc(KIND[hop.kind] || hop.kind)}</span>${STYPE[hop.source_type] ? `<span>${esc(STYPE[hop.source_type])}</span>` : ""}${hop.published_at ? `<span>${esc(day(hop.published_at))}</span>` : ""}<span>${esc(host(hop.url))}</span></div>
-        ${hop.title && hop.publisher ? `<div class="small">${esc(hop.title)}</div>` : ""}
-        <div class="passage"><mark>${esc(hop.passage || "")}</mark></div>
-        ${hop.says ? `<div class="small">${esc(hop.says)}</div>` : ""}
-        ${hop.mutation && hop.mutation !== "none" ? `<div class="mut"><b>${esc(MUT[hop.mutation] || "Changed")} here</b>${esc(hop.mutation_note || "")}</div>` : ""}
-        ${hop.cites && depth < max ? `<div class="cites">Points to: ${esc(hop.cites)}</div>` : ""}
-        <div class="links">
-          <a class="btn sm" href="/check/source/${hop.source_id}?${q}" data-nav data-ev="open_saved" data-depth="${depth}" data-max="${max}" data-claim="${x.id}" data-src="${hop.source_id}">Read it here</a>
-          <a class="btn sm line" href="${esc(hop.url)}" target="_blank" rel="noopener noreferrer" data-ev="open_live" data-depth="${depth}" data-max="${max}" data-claim="${x.id}" data-src="${hop.source_id}">Live page</a>
-          ${hop.archive_url ? `<a class="btn sm line" href="${esc(hop.archive_url)}" target="_blank" rel="noopener noreferrer" data-ev="open_archive" data-depth="${depth}" data-max="${max}" data-claim="${x.id}" data-src="${hop.source_id}">Archive</a>` : ""}
-        </div>
-        ${hop.previous_hash ? `<div class="tiny muted" style="margin-top:6px">This page has changed since we first saved it.</div>` : ""}
-      </li>`;
+  function renderClaim(c, claim, first) {
+    const el = document.getElementById("cv-claim");
+    if (claim) {
+      if (view.claimShown) return;
+      view.claimShown = true;
+      el.innerHTML = `<div class="label">The claim</div>
+        <h1 class="claimtext" id="claimtext">${esc(claim.claim)}</h1>
+        <p class="said">${claim.timestamp ? `<button class="ts" data-jump="${esc(claim.timestamp)}">${esc(claim.timestamp)}</button> ` : ""}“${esc(claim.quote)}”${claim.where_said === "on_screen" ? ` <span class="tiny muted">on screen</span>` : claim.where_said === "caption" ? ` <span class="tiny muted">in the caption</span>` : ""}</p>
+        ${claim.stated_source ? `<p class="tiny muted" style="margin:4px 0 0">Their source: ${esc(claim.stated_source)}</p>` : ""}`;
+      if (!first) wordsIn(document.getElementById("claimtext"));
+      el.querySelector("[data-jump]")?.addEventListener("click", (e) => jumpTo(e.target.dataset.jump));
+      return;
+    }
+    const noClaim = c.data && c.data.no_claim;
+    if (noClaim) { el.innerHTML = `<div class="label">The claim</div><p class="claimtext muted" style="font-size:18px">${esc(noClaim)}</p>`; return; }
+    if (c.status === "error") { el.innerHTML = ""; return; }
+    if (!el.querySelector(".skel")) el.innerHTML = `<div class="label">The claim</div><div class="skel build"><i style="width:92%"></i><i style="width:70%"></i></div>
+      <p class="tiny muted" style="margin:8px 0 0">Finding the one central, checkable claim…</p>`;
+  }
+
+  function hopHtml(c, claim, hop, depth, max) {
+    const kind = KINDTAG[hop.kind] || "";
+    const cmp = hop.compare || hop.mutation_note || hop.says || "";
+    const quote = stripMd(hop.passage);
+    const long = quote.split(" ").length > 30 && hop.paraphrase;
+    const url = fragmentUrl(hop);
+    return `<div class="dot">${depth}</div>
+      <div class="nb">
+        <div class="nhead"><span class="src">${esc(hop.source_name || hop.publisher || host(hop.url))}</span>${kind ? `<span class="tag ${esc(hop.kind)}">${esc(kind)}</span>` : ""}</div>
+        ${hop.title ? `<div class="hl">${esc(hop.title)}${hop.published_at ? ` · ${esc(day(hop.published_at))}` : ""}</div>` : ""}
+        ${long ? `<p class="para">${esc(hop.paraphrase)}</p><details class="exact"><summary>Exact words</summary><blockquote class="q">“${esc(quote)}”</blockquote></details>`
+          : `<blockquote class="q">“${esc(quote)}”</blockquote>`}
+        ${cmp ? `<p class="cmp">${hop.mutation && hop.mutation !== "none" ? `<span class="mut">${esc(MUT[hop.mutation] || "Changed")}</span>` : `<span class="same">Same</span>`}${esc(cmp)}</p>` : ""}
+        ${url ? `<a class="readbtn" href="${esc(url)}" target="_blank" rel="noopener noreferrer" data-ev="open_live" data-depth="${depth}" data-max="${max}" data-src="${esc(hop.source_id)}">Read the full article <span aria-hidden="true">↗</span></a>` : ""}
+      </div>`;
+  }
+
+  function videoNodeHtml(c, claim) {
+    return `<div class="dot vid">▶</div><div class="nb vidnb"><div class="nhead"><span class="src">The video</span>
+      <span class="hl">${esc(c.creator || "")}${claim.timestamp ? ` · at ${esc(claim.timestamp)}` : ""}</span></div></div>`;
+  }
+
+  function buildingHtml(claim) {
+    const p = (claim.data && claim.data.progress) || {};
+    const steps = (p.steps || []).slice(-3);
+    const second = p.attempt === 2 || (claim.data && claim.data.retrying);
+    return `<div class="dot ripple"><span></span></div>
+      <div class="nb building">
+        <div class="nhead"><span class="src shimmer-text">${second ? "Digging deeper" : (claim.status === "queued" ? "Starting the trace" : "Finding the next step")}</span>
+          ${p.read_limit ? `<span class="tag ghost">${p.reads || 0} of ${p.read_limit} pages read</span>` : ""}</div>
+        <div class="skel build"><i style="width:40%"></i><i style="width:88%"></i><i style="width:64%"></i></div>
+        <ul class="acts">${steps.map((s) => `<li data-at="${esc(s.at)}"><span class="ai">${ACT_ICON[s.kind] || "·"}</span>${esc(s.text)}</li>`).join("")}</ul>
+      </div>`;
+  }
+
+  function endHtml(claim) {
+    const failed = claim.status === "failed";
+    const cls = claim.ending === "origin_found" ? "good" : (["unsupported_assertion", "circular", "dead_end"].includes(claim.ending) ? "bad" : "");
+    return `<div class="dot end ${cls}"></div>
+      <div class="nb">
+        <div class="nhead"><span class="src">${failed ? "The trace failed" : esc(ENDLABEL[claim.ending] || "Done")}</span></div>
+        ${failed ? `<p class="cmp">${esc(claim.bottom_line || "")}</p><button class="btn sm line" id="retrace">Try again</button>`
+          : `<div class="verdict">${chip(claim.verdict, true)}${claim.confidence ? `<span class="conf">${esc(claim.confidence)} confidence</span>` : ""}</div>
+             ${claim.bottom_line ? `<p class="bl">${esc(claim.bottom_line)}</p>` : ""}`}
+      </div>`;
+  }
+
+  function renderTimeline(c, claim, first) {
+    const sec = document.getElementById("cv-trace");
+    const tl = document.getElementById("tl");
+    if (!claim) { sec.hidden = true; return; }
+    const below = [document.getElementById("cv-below")];
+    if (sec.hidden) {
+      flip(below, () => { sec.hidden = false; });
+      const v = document.createElement("li"); v.className = "node video"; v.innerHTML = videoNodeHtml(c, claim);
+      tl.appendChild(v);
+      if (!first) anim(v, { opacity: [0, 1], y: [10, 0] });
+    }
+    const chain = claim.chain || [];
+    const ids = new Set(chain.map((h) => String(h.id)));
+    // steps that were dropped by the second pass fade out
+    for (const [hid, el] of view.nodes) if (!ids.has(hid)) {
+      view.nodes.delete(hid);
+      const after = [...el.parentNode.children].slice([...el.parentNode.children].indexOf(el) + 1).concat(below);
+      if (M && !reduce) M.animate(el, { opacity: 0, x: -12 }, { duration: 0.2 }).then(() => flip(after, () => el.remove())); else el.remove();
+    }
+    const busy = ["queued", "tracing"].includes(claim.status);
+    // new steps slide in above the building step, pushing everything below down
+    chain.forEach((hop, i) => {
+      const key = String(hop.id);
+      let el = view.nodes.get(key);
+      if (el) { const dot = el.querySelector(".dot"); if (dot && dot.textContent !== String(i + 1)) dot.textContent = i + 1; return; }
+      el = document.createElement("li");
+      el.className = "node hop"; el.dataset.id = key;
+      el.innerHTML = hopHtml(c, claim, hop, i + 1, chain.length);
+      el.querySelectorAll("[data-ev]").forEach((a) => a.addEventListener("click", () =>
+        event(c.id, { action: a.dataset.ev, claim_id: claim.id, depth: +a.dataset.depth, max_depth: +(claim.chain || []).length, source_id: a.dataset.src })));
+      const anchor = view.building || tl.querySelector(".node.end");
+      const movers = [view.building, tl.querySelector(".node.end")].concat(below);
+      flip(movers, () => tl.insertBefore(el, anchor || null));
+      view.nodes.set(key, el);
+      if (!first) anim(el, { opacity: [0, 1], y: [14, 0], scale: [0.985, 1] }, SPRING);
     });
-    const [label, cls] = ENDING[x.ending] || [x.status === "tracing" ? "Still tracing…" : "", ""];
-    if (label) h += `<li class="rung end ${cls}"><div class="endcard">${esc(label)}</div></li>`;
-    return h + `</ol>`;
+    // the step being built: rippling placeholder with live activity
+    if (busy) {
+      if (!view.building) {
+        view.building = document.createElement("li");
+        view.building.className = "node build-node";
+        view.building.innerHTML = buildingHtml(claim);
+        flip(below, () => tl.appendChild(view.building));
+        anim(view.building, { opacity: [0, 1], y: [10, 0] });
+      } else {
+        const old = [...view.building.querySelectorAll(".acts li")].map((li) => li.dataset.at);
+        const tmp = document.createElement("div"); tmp.innerHTML = buildingHtml(claim);
+        view.building.querySelector(".nhead").innerHTML = tmp.querySelector(".nhead").innerHTML;
+        const acts = view.building.querySelector(".acts");
+        const fresh = tmp.querySelector(".acts");
+        if (acts.innerHTML !== fresh.innerHTML) {
+          acts.innerHTML = fresh.innerHTML;
+          acts.querySelectorAll("li").forEach((li) => { if (!old.includes(li.dataset.at)) anim(li, { opacity: [0, 1], x: [-6, 0] }, { duration: 0.3 }); });
+        }
+      }
+    } else if (view.building) {
+      const b = view.building; view.building = null;
+      flip(below, () => b.remove());
+    }
+    // the end: where it started, then the verdict (shown last, after the steps)
+    if (!busy && claim.status !== "unchecked" && claim.status !== "opinion" && !view.endShown && (claim.ending || claim.status === "failed")) {
+      view.endShown = true;
+      const e = document.createElement("li"); e.className = "node end"; e.innerHTML = endHtml(claim);
+      flip(below, () => tl.appendChild(e));
+      if (!first) anim(e, { opacity: [0, 1], y: [14, 0] }, SPRING);
+      const rt = e.querySelector("#retrace");
+      if (rt) rt.onclick = async () => { rt.disabled = true; try { await post(`/api/check/${c.id}/claims/${claim.id}/trace`); renderCheck(c.id); } catch (er) { toast(er.message); rt.disabled = false; } };
+    }
   }
 
-  function bindCheck(c) {
-    $app.querySelectorAll("[data-act]").forEach((b) => b.addEventListener("click", async () => {
-      const act = b.dataset.act, claim = b.dataset.claim;
-      if (act === "ladder") {
-        if (openLadders.has(claim)) openLadders.delete(claim); else { openLadders.add(claim); event(c.id, { action: "open_receipts", claim_id: claim }); }
-        const y = window.scrollY; $app.innerHTML = checkHtml(lastCheck); bindCheck(lastCheck); window.scrollTo(0, y); return;
-      }
-      b.disabled = true;
-      try {
-        if (act === "retry") { const r = await post(`/api/check/${c.id}/retry`); navigate(`/check/${r.id}`); return; }
-        if (act === "trace") { await post(`/api/check/${c.id}/claims/${claim}/trace`); toast("Tracing it now."); renderCheck(c.id, true); return; }
-        if (act === "deeper") { const r = await post(`/api/check/${c.id}/claims/${claim}/deeper`); toast("Deep research started. It takes a while."); location.href = r.url; return; }
-      } catch (e) { if (e.message !== "auth") toast(e.message); b.disabled = false; }
-    }));
-    $app.querySelectorAll("[data-ev]").forEach((a) => a.addEventListener("click", () => {
-      event(c.id, { action: a.dataset.ev, claim_id: a.dataset.claim || "", depth: +(a.dataset.depth || 0), max_depth: +(a.dataset.max || 0), source_id: a.dataset.src || "" });
-    }));
+  function renderUnknowns(claim) {
+    const el = document.getElementById("cv-unknowns");
+    const u = (claim && claim.data && claim.data.unknowns) || [];
+    if (!u.length || ["queued", "tracing"].includes(claim.status)) { el.hidden = true; return; }
+    const html = `<div class="label">Still unknown</div><ul class="plain small">${u.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`;
+    if (el.dataset.h !== html) { el.dataset.h = html; el.innerHTML = html; el.hidden = false; anim(el, { opacity: [0, 1] }, { duration: 0.4 }); }
+  }
+
+  function normWords(s) { return String(s || "").toLowerCase().replace(/[^a-z0-9%$ ]+/g, " ").split(/\s+/).filter((w) => w.length > 2); }
+  function renderTranscript(c, claim, first) {
+    const el = document.getElementById("cv-script");
+    const t = c.transcript || "";
+    const key = t.length + ":" + (claim ? claim.id : "") + ":" + (c.caption || "").length;
+    if (key === view.transcriptKey) return;
+    view.transcriptKey = key;
+    if (!t && !c.caption) {
+      el.innerHTML = ["queued", "running"].includes(c.status) ? `<div class="label">Transcript</div><div class="skel build lines"><i></i><i></i><i style="width:80%"></i><i></i><i style="width:60%"></i></div>` : "";
+      return;
+    }
+    const lines = t.split("\n").filter(Boolean).map((l) => { const m = l.match(/^\[(\d+:\d\d(?::\d\d)?)\]\s*(.*)$/); return m ? { ts: m[1], text: m[2] } : { ts: "", text: l }; });
+    const qw = claim ? new Set(normWords(claim.quote)) : null;
+    const hit = (txt) => { if (!qw || !qw.size) return false; const w = normWords(txt); if (!w.length) return false; const n = w.filter((x) => qw.has(x)).length; return n >= Math.min(4, Math.ceil(qw.size * 0.5)) && n / w.length > 0.35; };
+    el.innerHTML = `<div class="label">Transcript${c.transcript_source === "audio" ? ` <span class="tiny muted" style="text-transform:none;letter-spacing:0">from the audio</span>` : ""}</div>
+      ${lines.length ? `<ol class="script">${lines.map((l) => `<li class="${hit(l.text) ? "hit" : ""}" data-ts="${esc(l.ts)}">${l.ts ? `<span class="lts">${esc(l.ts)}</span>` : ""}<span>${esc(l.text)}</span></li>`).join("")}</ol>` : `<p class="small muted">No speech in this video.</p>`}
+      ${c.caption ? `<details class="cap"><summary class="small">Caption</summary><p class="small">${esc(c.caption)}</p></details>` : ""}`;
+    if (!first && M && !reduce) M.animate(el.querySelectorAll(".script li"), { opacity: [0, 1], y: [4, 0] }, { delay: M.stagger(0.015, { startDelay: 0.05 }), duration: 0.25 });
+  }
+  function jumpTo(ts) {
+    const li = document.querySelector(`.script li[data-ts="${CSS.escape(ts)}"]`) || document.querySelector(".script li.hit");
+    if (!li) return;
+    li.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
+    li.classList.remove("flash"); void li.offsetWidth; li.classList.add("flash");
+  }
+
+  function renderFoot(c) {
+    const el = document.getElementById("cv-foot");
+    const running = ["queued", "running"].includes(c.status);
+    const warn = (c.data && c.data.warnings) || [];
+    const html = running ? "" : `${warn.length ? `<details class="small"><summary>Notes (${warn.length})</summary><ul class="plain muted">${warn.map((w) => `<li>${esc(w)}</li>`).join("")}</ul></details>` : ""}
+      <p class="tiny muted"><a href="/check/log/${c.id}" data-nav>Research log</a> · every search and page read for this check</p>`;
+    if (el.dataset.h !== html) { el.dataset.h = html; el.innerHTML = html; }
   }
 
   // ---------- saved source reader ----------

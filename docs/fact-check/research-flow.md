@@ -1,6 +1,6 @@
 # Video Fact-Check: Research Flow
 
-Status: **v0.5 live (pilot)** (code in `backend/factcheck/`, setup in `SETUP.md`). Last audited: 2026-10-30.
+Status: **v0.6 live (pilot)** (code in `backend/factcheck/`, setup in `SETUP.md`). Last audited: 2026-10-30.
 
 This is the source of truth for how the video fact-checker works. Edit the diagrams here, then re-render the images (see "Updating this map" at the bottom). Every change gets a line in the Changelog.
 
@@ -8,9 +8,10 @@ Images: `research-flow-overview.png` (diagram 1), `research-flow-trace.png` (dia
 
 ## Principles
 
-1. **Show every receipt.** The verdict is the hook, the receipts are the product. Every claim links to every source in its chain, with the exact passage, so the viewer can follow the rabbit hole themselves.
-2. **Check for ourselves.** Other fact-checkers are never the authority. Their verdicts are hidden from our tracer and only shown afterward as a second opinion.
-3. **Keep everything we read.** Every source is saved with a snapshot, so receipts never rot and each check makes the next one faster.
+1. **Show every receipt.** The receipts are the product. The viewer is walked down the chain one step at a time and reaches the verdict last, so they discover the answer instead of being told it.
+2. **As little AI-written text as possible.** Each step is a source name, the source's own words, and one short line on what changed. No essays, no side panels.
+3. **Check for ourselves.** Other fact-checkers are never the authority. Their verdicts are hidden from our tracer and only shown afterward as a second opinion.
+4. **Keep everything we read.** Every source is saved with a snapshot, so receipts never rot and each check makes the next one faster.
 
 **Main success metric: rabbit hole depth.** Does the viewer open the receipts and keep going, or stop at the verdict?
 
@@ -39,38 +40,26 @@ flowchart TD
 
   subgraph CAP["2 · CAPTURE (ported from Content Files)"]
     C1["Post lookup: caption, creator, post date,<br/>stats, top comments, platform transcript"]:::borrowCMS
-    C2["Download video → frames at every cut<br/>plus even spacing (max 60)"]:::borrowCMS
+    C2["Download video → frames at every cut<br/>plus even spacing (max 16)"]:::borrowCMS
     C3["No platform transcript? → Whisper on the audio"]:::borrowCMS
     C4["Read on-screen text, charts, headlines,<br/>screenshots shown in frames"]:::new
   end
   CAP --> PKT["EVIDENCE PACKET<br/>timestamped transcript + frames + caption + creator"]:::stage
 
-  PKT --> EX
-  subgraph EX["3 · CLAIM EXTRACTION"]
-    E1["Thesis: what the video wants you to believe"]:::new
-    E2["Atomic claims, each with timestamp + exact quote"]:::new
-    E3["Claim type: statistic · quote · event · study ·<br/>causal · clip/visual · prediction · opinion"]:::new
-    E4["Stated source: what the speaker says it comes from"]:::new
-  end
+  CAP -.->|"transcript shown on the phone<br/>as soon as it exists"| PHONE1["Phone: transcript, line by line"]:::store
+  PKT --> EX["3 · THE ONE CENTRAL CLAIM<br/>the single checkable claim the video rests on<br/>exact quote · timestamp · stated source<br/>(several lines saying the same thing = one claim)"]:::new
+  EX -->|no checkable claim| NONE["Says so, shows the transcript"]:::store
+  EX --> TR
 
-  EX --> TRI{"4 · TRIAGE<br/>max 3 claims<br/>central claim first"}:::stage
-  TRI -->|opinion or unfalsifiable| OP["Labeled 'opinion', not checked"]:::store
-  TRI -->|"the rest"| LATER["Listed as 'not checked'<br/>with a button to check"]:::store
-  TRI -->|"up to 3 check-worthy claims"| TR
-
-  TR["5 · PROVENANCE TRACE<br/>one Sonnet agent per claim, in parallel<br/>(see Diagram 2)"]:::new
+  TR["5 · PROVENANCE TRACE<br/>Sonnet tracer, Opus retry if it ends badly<br/>(see Diagram 2)"]:::new
   LIB[("SOURCE LIBRARY<br/>every page read · snapshot ·<br/>who cites whom · past traces<br/>(see Diagram 3)")]:::store
   TR <-->|"reads first, saves everything"| LIB
-  TR --> CMP["6 · COMPARE<br/>the video's version vs the origin<br/>what changed along the chain?"]:::new
-  CMP --> VER["VERDICT<br/>label + confidence, from our own trace only"]:::stage
-  VER --> CTX["7 · CONTEXT + SECOND OPINIONS<br/>named critics + supporters · what the video leaves out ·<br/>other fact-checkers' verdicts, disagreements flagged"]:::borrowLimbo
-  CTX --> REP["8 · REPORT<br/>verdict up top, every receipt one tap away"]:::out
-  OP --> REP
-  LATER --> REP
+  TR -.->|"each step appears live as it is found"| PHONE2["Phone: the timeline grows step by step"]:::store
+  TR --> CMP["6 · COMPARE<br/>each step: same or different from the one above"]:::new
+  CMP --> VER["VERDICT<br/>label + confidence + one sentence,<br/>shown LAST, at the end of the timeline"]:::stage
+  VER --> REP["8 · REPORT<br/>claim → steps → where it started → verdict → still unknown → transcript"]:::out
 
   REP --> ENG[("RABBIT HOLE TRACKING<br/>which receipts opened · how deep ·<br/>did they reach the original document")]:::store
-  REP --> DEEP["'Go deeper' on any claim →<br/>existing 3-phase pipeline → full article"]:::borrowLimbo
-  DEEP --> LIB
 ```
 
 **Legend:** blue = ported from Content Files · green = from the current Limbo research pipeline · orange = new for this tool · gray = storage.
@@ -215,13 +204,18 @@ erDiagram
 - **New:** read on-screen text, charts, screenshots of headlines or tweets shown in the video. These are often the actual claim.
 - Output: one **evidence packet** with timestamps on everything.
 
-### 3 · Claim extraction
+### 3 · The one central claim (v0.6)
+Since v0.6 only one claim is traced: in testing, the "top 3" claims were nearly always the same claim from different lines, with the same root sources. Claude reads up to 10 frames, the transcript and the caption and returns the single central, checkable claim (exact quote, timestamp, plain restatement, stated source). The transcript itself is shown to the viewer line by line, with the claim's line highlighted. No per-line "check this" for now.
+
+The notes below describe the v0.5 multi-claim extraction and are kept for reference.
+
+#### v0.5 claim extraction (retired)
 - **Thesis:** one sentence on what the video wants you to believe. Individual claims can all be true while the thesis is not.
 - **Atomic claims:** split compound sentences ("crime is up 40% because of X" = a statistic + a causal claim).
 - Each claim keeps: timestamp, exact quote, type, and the **stated source** ("a Harvard study", "the CDC says", "this clip shows").
 - Rule carried over from Content Files: use only what the evidence shows, never guess.
 
-### 4 · Triage
+#### v0.5 triage (retired)
 - **Max 3 claims.** Most videos rest on one central claim, so that one is traced first and gets the most budget.
 - Opinions, values and predictions are labeled as such, not "checked".
 - Rank by: how central to the thesis × how checkable × how specific.
@@ -258,12 +252,23 @@ The mutation check, run on every link in the chain. The common ways claims chang
 
 The **verdict** comes only from our own chain and this comparison.
 
-### 7 · Context + second opinions (borrowed from Phase 3, lighter)
+### 7 · Context + second opinions (OFF since v0.6)
+Removed from the report for now: too much text. Other fact-checkers are still used during the trace as links only (their verdicts hidden). Revisit later. What it did:
 - At least one named critic and one named supporter, with quotes and links. Same rule as Phase 3: a one-sided result is incomplete.
 - **What the video leaves out:** the context a viewer would need to judge it.
 - **Other fact-checkers' verdicts**, shown after ours, with disagreements flagged.
 
-### 8 · Report (what you see on your phone)
+### 8 · Report (v0.6: built live, step by step)
+1. Share or paste → the header and transcript appear first (seconds), then **the claim** (big, with the exact quote and timestamp).
+2. **Follow it back**: the timeline starts at the video and grows one step at a time while the tracer works. The step being built ripples and shows what the tracer is doing ("Searching…", "Reading Open Philanthropy…"). Each new step slides in and gently pushes everything below it down.
+3. Each step: the **source's name** (headline smaller underneath), a tag (**Repeats it** / **Original source** / **Cites nothing**), the source's **exact words** (or a 20-word paraphrase with the exact words one tap away when the quote is long), one line on **how it compares** to the step above (with a "Same" or "Number changed" style tag), and one **Read the full article** button that opens the original page scrolled to the quote and highlighted (URL text fragments; works in Safari, Chrome and Edge).
+4. The end: **where it started**, then the **verdict** (label, confidence, one sentence). The viewer reaches it last.
+5. **Still unknown** (up to 3 short items), then the full **transcript**.
+6. Home list: swipe left (phone) or right-click (computer) to **archive** (with Undo) or **delete** a check. Deleting keeps the sources in the library.
+
+The v0.5 report is described below for reference.
+
+#### v0.5 report (retired)
 - Top: the thesis and the verdict label for the central claim. The label gives an immediate answer and points straight at the receipts.
 - One card per claim: the quote and timestamp, a verdict chip, and the chain as a vertical ladder (video → hop → origin). Every rung opens the exact passage, highlighted, with links to the live page and our saved snapshot.
 - Verdict chips describe the relationship to the origin: **Matches origin · Stretched · Missing context · Misattributed · Outdated · Contradicted by origin · No origin found · Opinion**. Each with a confidence level.
@@ -309,12 +314,16 @@ Headline number: **share of checks where the viewer reached the origin.**
 
 ## Decisions
 
-- **2026-10-30** Max 3 claims per video, central claim first.
+- **2026-10-30** Max 3 claims per video, central claim first. (Replaced 2026-11-03: one claim.)
 - **2026-10-30** Verdict labels yes, always paired with the full receipt chain.
 - **2026-10-30** Other fact-checkers are leads and second opinions only, never the verdict.
 - **2026-10-30** Basic security on the fact-check section before the share route goes live.
 - **2026-10-30** Limbo stands alone: capture code is ported into the Python app.
 - **2026-10-30** Keep every source read in a source library.
+- **2026-11-03** One central claim per video; transcript shown line by line; no per-line checking for now.
+- **2026-11-03** Minimal AI text: source name, exact words, one comparison line per step; verdict shown last; no context, voices or second-opinions sections; one "still unknown" note.
+- **2026-11-03** One "Read the full article" button that opens the original page at the quote. Our saved copy and the archive stay in the library, not as extra buttons.
+- **2026-11-03** Archive / delete checks from the home list (swipe or right-click).
 - **2026-10-30** Pilot with Sonnet tracers and capped budgets. "Go deeper" runs the full Opus pipeline. Accuracy gets tested against deep manual research before we trust it (see Pilot evaluation).
 
 ## Open questions
@@ -391,6 +400,7 @@ Run this against 3 to 5 real checks each time we audit.
 
 ## Changelog
 
+- **2026-11-03 · v0.6** Step-by-step redesign after testing. One central claim; transcript appears first; the timeline is the main view and builds live (Motion springs, rippling step, push-down); steps cut to source name + exact words + one comparison line; verdict moved to the end; context/voices/second opinions removed; "Read the full article" opens the original at the highlighted quote; archive/delete from the home list. Tracer now records source name, compare line and optional paraphrase per step, and streams its activity.
 - **2026-10-30 · v0.5** First audit, after the first real check (EA funding / AI doom video). Three fixes: (1) articles are not records: source type on every hop, one push-back when a tracer stops at an article with budget left, Opus retry when the central claim still ends at an article; (2) JavaScript-built pages: thin-page detection, rendered re-read, embedded page data, archive.org retries; (3) slightly malformed tool calls are repaired instead of failing. Also fixed on launch day: Railway build (Python 3.12) and claim extraction (forced tool_choice no longer accepted).
 - **2026-10-30 · v0.4** Built. Every stage in this map is implemented (see the code table in SETUP.md). Passes 47 offline checks and a 17-check end-to-end pipeline test with a scripted stand-in for Claude. Not yet run against real videos and the real web: first real runs happen on Railway after the variables are set. Built-in details not shown in the diagrams: every agent action is saved to a per-check research log; pages that change after we save them are flagged; up to 16 frames per video (opening, every cut, then even spacing).
 

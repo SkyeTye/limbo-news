@@ -50,8 +50,8 @@ HOW TO WORK
 1. search_library first. We keep every source and every past trace. Reuse them.
 2. Then the stated source, web_search, and factcheck_leads. factcheck_leads gives you only the links that existing fact-check articles cite. Their conclusions are withheld on purpose: we check for ourselves. Never treat a fact-checker as an authority. If a fact-check article is itself part of how the claim spread, it can be a hop like any other source.
 3. read_source to read a page (it is saved to the library). Pages are long: use find_in_source to locate the exact passage and the citations near it.
-4. record_hop for each verified step. The passage must be copied word for word from the saved text (5 to 120 words). If it is rejected, use find_in_source and copy it exactly.
-5. For every hop, run the mutation check: compare what this source says to what the hop above it says (for hop 1, compare to the video's quote). Did a number change, the scope widen, a hedge ("may", "some") disappear, old data get presented as new, correlation become causation, a quote get clipped, the speaker get swapped, the clip come from a different event, or one study get picked over many? Use "none" if it matches.
+4. record_hop for each verified step. The passage must be copied word for word from the saved text (5 to 80 words, the shorter the better). If it is rejected, use find_in_source and copy it exactly.
+5. For every hop, run the mutation check: compare what this source says to what the hop above it says (for hop 1, compare to the video's quote), and write that comparison as one short sentence in compare. Did a number change, the scope widen, a hedge ("may", "some") disappear, old data get presented as new, correlation become causation, a quote get clipped, the speaker get swapped, the clip come from a different event, or one study get picked over many? Use "none" if it matches.
 6. Follow each source's citation down. If a link is dead or blocked, try archive_lookup. If nothing works, the chain ends in a dead end.
 7. Stop when you reach a primary source, when the bottom source cites nothing, when sources cite each other in a loop, or when you run out of budget. Then call complete_trace.
 8. If a page loads but has almost no readable text (built by JavaScript, or a menu-only page), look for another copy: the PDF, a search result for the exact record title, a grants database or filing aggregator, or archive_lookup.
@@ -66,7 +66,9 @@ THE VERDICT (relationship between the video's version and the origin)
 - no_origin_found: you could not find where it started, or it started as an unsupported assertion.
 Confidence is "high" only when the origin was found and its passage directly addresses the claim. Use "low" whenever the bottom of your chain is an article rather than a record, or you are relying on secondary sources.
 
-Be fair to the creator. Quote them accurately. If a claim holds up, say so plainly. Say what is unknown. Write plainly and briefly. No em dashes."""
+WRITING
+The viewer discovers the answer by following your steps one at a time, so your words are short labels, not analysis. Each step shows: the source's name, its exact words, and one short sentence on how it matches or differs from the step above. The bottom line comes last and is one sentence. Prefer the source's own words over yours.
+Be fair to the creator. Quote them accurately. If a claim holds up, say so plainly. Say what is unknown. No em dashes."""
 
 TOOLS = [
     {"name": "search_library", "description": "Search our saved sources and past traces before going to the web. Free.",
@@ -81,26 +83,27 @@ TOOLS = [
      "input_schema": {"type": "object", "properties": {"source_id": {"type": "string"}, "terms": {"type": "array", "items": {"type": "string"}}}, "required": ["source_id", "terms"]}},
     {"name": "archive_lookup", "description": "Get the Wayback Machine copy of a dead, deleted or blocked page and read it. Counts as a read.",
      "input_schema": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}},
-    {"name": "record_hop", "description": "Record the next hop in the chain (closest to the video first, origin last). The passage must appear word for word in the saved source.",
+    {"name": "record_hop", "description": "Record the next step in the chain (closest to the video first, origin last). The passage must appear word for word in the saved source.",
      "input_schema": {"type": "object", "properties": {
          "source_id": {"type": "string"},
-         "passage": {"type": "string", "description": "Exact words from the source (5 to 120 words) that carry the claim"},
+         "source_name": {"type": "string", "description": "Short name of the outlet or organization, e.g. 'Effort News', 'Open Philanthropy', 'CDC'. Not the headline."},
+         "passage": {"type": "string", "description": "Exact words from the source (5 to 80 words, shorter is better) that carry the claim"},
+         "paraphrase": {"type": "string", "description": "Only if the passage is longer than 30 words: the same point in 20 words or fewer. Otherwise ''."},
          "kind": {"type": "string", "enum": ["primary", "secondary", "unsupported"]},
          "source_type": {"type": "string", "enum": SOURCE_TYPES, "description": "What this source is. Articles are news_or_analysis or advocacy, even when they add up figures themselves."},
-         "says": {"type": "string", "description": "One plain sentence: what this source says about the claim"},
-         "cites": {"type": "string", "description": "What this source points to as its own source (URL or description), or 'nothing'"},
+         "compare": {"type": "string", "description": "One short sentence, 25 words or fewer: how this source's version is the same as or different from the step above it (for step 1, the video). Concrete, e.g. 'Same $40M figure, but counts all media grants, not just AI.'"},
          "mutation": {"type": "string", "enum": MUTATIONS},
-         "mutation_note": {"type": "string", "description": "If the claim changed here, exactly how (quote both versions). '' if none."},
-     }, "required": ["source_id", "passage", "kind", "source_type", "says", "cites", "mutation", "mutation_note"]}},
+         "cites": {"type": "string", "description": "What this source points to as its own source (URL or description), or 'nothing'"},
+     }, "required": ["source_id", "source_name", "passage", "kind", "source_type", "compare", "mutation", "cites"]}},
     {"name": "complete_trace", "description": "Finish the trace with the verdict.",
      "input_schema": {"type": "object", "properties": {
          "ending": {"type": "string", "enum": ENDINGS},
          "verdict": {"type": "string", "enum": VERDICTS},
          "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
-         "bottom_line": {"type": "string", "description": "One or two plain sentences a viewer reads first"},
-         "video_vs_origin": {"type": "string", "description": "What the origin actually says vs what the video says. '' if no origin."},
+         "bottom_line": {"type": "string", "description": "One plain sentence, 25 words or fewer, shown at the END of the chain after the viewer has followed the steps"},
+         "video_vs_origin": {"type": "string", "description": "Optional. ''"},
          "mutations": {"type": "array", "items": {"type": "object", "properties": {"type": {"type": "string", "enum": MUTATIONS}, "note": {"type": "string"}}, "required": ["type", "note"]}},
-         "unknowns": {"type": "array", "items": {"type": "string"}},
+         "unknowns": {"type": "array", "items": {"type": "string"}, "description": "Up to 3 short items: what is still not known"},
          "hop_order": {"type": "array", "items": {"type": "integer"}, "description": "Optional: hop ids in the right order, closest to the video first"},
          "drop_hop_ids": {"type": "array", "items": {"type": "integer"}, "description": "Optional: hops that turned out not to belong in the chain"},
      }, "required": ["ending", "verdict", "confidence", "bottom_line", "video_vs_origin", "mutations", "unknowns"]}},
@@ -123,6 +126,11 @@ def find_passage(text, passage):
         return -1
     m = pat.search(text or "")
     return m.start() if m else -1
+
+
+def _host(url):
+    m = re.match(r"https?://(?:www\.)?([^/]+)", url or "")
+    return m.group(1) if m else (url or "")
 
 
 def _split_terms(value):
@@ -184,10 +192,14 @@ class Trace:
     def _log(self, tool, inp, result):
         db.audit(self.check["id"], self.claim["id"], f"tracer:{self.model}:{self.attempt}", tool, inp, result)
 
-    def _progress(self, action):
+    def _progress(self, action, kind="note"):
+        """Live activity for the phone: the building step shows what the tracer is doing right now."""
         hops = db.hops_for(self.claim["id"])
+        prev = ((db.get_claim(self.claim["id"]) or {}).get("data") or {}).get("progress") or {}
+        steps = (prev.get("steps") or [])[-7:] + [{"kind": kind, "text": action[:140], "at": db.now()}]
         db.merge_claim_data(self.claim["id"], progress={"reads": self.reads, "read_limit": self.read_limit,
-                                                         "hops": len(hops), "hop_limit": self.hop_limit, "last": action[:140]})
+                                                         "hops": len(hops), "hop_limit": self.hop_limit, "last": action[:140],
+                                                         "steps": steps, "attempt": self.attempt})
 
     def _source_view(self, src, offset=0, from_library=False):
         text = src.get("full_text") or ""
@@ -236,7 +248,7 @@ class Trace:
             out.append("SAVED SOURCES:")
             for s in sources:
                 out.append(f"- source_id {s['id']} | {s.get('title') or ''} | {s['url']} | {s.get('published_at') or ''}\n  …{(s.get('snip') or '').strip()[:300]}…")
-        self._progress("searched the library")
+        self._progress("Checked our library of saved sources", "library")
         return ("\n".join(out) if out else "Nothing in the library yet for this. Go to the web."), None
 
     def t_web_search(self, query, max_results=6):
@@ -244,7 +256,7 @@ class Trace:
         if self.searches > self.read_limit + 6:
             return "Search limit reached for this claim. Work with what you have.", None
         res = web_search(query, min(int(max_results or 6), 10))
-        self._progress(f"searched: {query}")
+        self._progress(f"Searching: {query}", "search")
         lines = []
         for r in res:
             if r.get("error"):
@@ -261,7 +273,7 @@ class Trace:
         prev = (db.get_claim(self.claim["id"]) or {}).get("data", {}).get("factchecks") or []
         merged = prev + [f for f in found if not any(p.get("url") == f.get("url") for p in prev)]
         db.merge_claim_data(self.claim["id"], factchecks=merged)  # kept for the second-opinions stage, not shown to you
-        self._progress("checked other fact-checkers' sources")
+        self._progress("Looked at what other fact-checks link to", "search")
         if not found:
             return "No existing fact-check articles found for this claim. Trace it from scratch.", None
         lines = [f"{len(found)} existing fact-check article(s) found. Their conclusions are withheld so they cannot steer you.",
@@ -290,13 +302,13 @@ class Trace:
         try:
             src, from_lib = web.read_into_library(url)
         except Exception as e:
-            self._progress(f"could not open {url}")
+            self._progress(f"Couldn't open {_host(url)}", "fail")
             return f"Could not open this page: {str(e)[:200]}. Try archive_lookup, another copy, or the PDF.", None
         if not from_lib:
             self._count_read(url)
         else:
             self.read_this_trace.add(key)
-        self._progress(f"read {src.get('title') or url}")
+        self._progress(f"Reading {src.get('publisher') or _host(src.get('url') or url)}: {src.get('title') or ''}".rstrip(": "), "read")
         return self._source_view(src, offset, from_library=from_lib), None
 
     def t_find_in_source(self, source_id, terms):
@@ -337,10 +349,11 @@ class Trace:
             return f"The archived copy could not be read either ({str(e)[:150]}).", None
         sid, _ = db.save_source(url, res["text"], title=res.get("title", ""), final_url=snap, fetched_via="wayback", archive_url=snap)
         src = db.get_source(sid)
-        self._progress(f"read archived copy of {url}")
+        self._progress(f"Reading the archived copy of {_host(url)}", "read")
         return "(Archived copy from the Wayback Machine, saved under the original URL.)\n" + self._source_view(src), None
 
-    def t_record_hop(self, source_id, passage, kind, says, cites, mutation="none", mutation_note="", source_type=""):
+    def t_record_hop(self, source_id, passage, kind, source_name, compare, cites="", mutation="none", source_type="",
+                     paraphrase="", says="", mutation_note=""):
         src = db.get_source(source_id)
         if not src:
             return "REJECTED: unknown source_id. Read the source first.", None
@@ -352,8 +365,10 @@ class Trace:
                 return (f"REJECTED: this source is already hop {h['position']}. If sources cite each other in a loop, "
                         "finish with ending 'circular'."), None
         n_words = len(re.findall(r"\w+", passage or ""))
-        if n_words < 5 or n_words > 120:
-            return f"REJECTED: the passage must be 5 to 120 words (it is {n_words}).", None
+        if n_words < 5 or n_words > 80:
+            return f"REJECTED: the passage must be 5 to 80 words (it is {n_words}). Pick the shortest exact stretch that carries the claim.", None
+        if len(re.findall(r"\w+", compare or "")) > 35:
+            return "REJECTED: keep compare to one short sentence (25 words or fewer).", None
         loc = find_passage(src.get("full_text"), passage)
         if loc < 0:
             return ("REJECTED by the receipt check: that passage does not appear word for word in the saved text of this source. "
@@ -361,17 +376,23 @@ class Trace:
         pid = db.add_passage(source_id, passage.strip(), loc)
         if source_type not in SOURCE_TYPES:
             source_type = ""
-        hid, pos = db.add_hop(self.claim["id"], source_id, pid, kind, says, cites, mutation or "none", mutation_note or "", self.attempt, source_type)
+        if source_name and not src.get("publisher"):
+            db.update_source(source_id, publisher=source_name.strip()[:80])
+        hid, pos = db.add_hop(self.claim["id"], source_id, pid, kind, says, cites, mutation or "none", mutation_note or "", self.attempt, source_type,
+                              compare=(compare or "").strip(), paraphrase=(paraphrase or "").strip() if n_words > 30 else "",
+                              source_name=(source_name or "").strip()[:80])
         if hops:
             db.add_citation(hops[-1]["source_id"], source_id, hops[-1].get("cites", ""))
         kinds = {"primary": "primary", "secondary": "secondary", "unsupported": "unsupported"}
         if not src.get("kind") or src.get("kind") == "unknown" or kind == "primary":
             db.update_source(source_id, kind=kinds.get(kind, "unknown"))
-        self._progress(f"recorded hop {pos}: {src.get('title') or src['url']}")
+        self._progress(f"Found step {pos}: {source_name or src.get('publisher') or _host(src['url'])}", "found")
         left = self.hop_limit - pos
         return f"Recorded as hop {pos} (hop id {hid}). Receipt check passed. {left} hop(s) left.", None
 
     def t_complete_trace(self, ending, verdict, confidence, bottom_line, video_vs_origin="", mutations=None, unknowns=None, hop_order=None, drop_hop_ids=None):
+        if len(re.findall(r"\w+", bottom_line or "")) > 40:
+            return "REJECTED: bottom_line must be one sentence of 25 words or fewer. The steps carry the detail.", None
         if hop_order or drop_hop_ids:
             db.reorder_hops(self.claim["id"], hop_order or [], drop_hop_ids or [])
         hops = db.hops_for(self.claim["id"])

@@ -485,8 +485,10 @@ def transcript_text(segments):
 
 # ---------- the whole stage ----------
 
-def capture(url, frames_dir, progress=lambda step: None):
-    """Returns the evidence packet. Never raises for partial failures; they go in warnings."""
+def capture(url, frames_dir, progress=lambda step: None, on_update=lambda **kw: None):
+    """Returns the evidence packet. Never raises for partial failures; they go in warnings.
+    on_update(...) is called as soon as each piece is known (creator, caption, transcript),
+    so the phone can show the transcript before the video has been watched."""
     warnings = []
     platform = platform_of(url)
     post = {"found": False, "segments": [], "comments": [], "errors": {}}
@@ -503,6 +505,12 @@ def capture(url, frames_dir, progress=lambda step: None):
                 post["errors"]["post"] = str(e)
             if not post.get("found"):
                 warnings.append("The post lookup failed (" + str(post.get("errors", {}).get("post", "private or deleted?"))[:90] + ").")
+
+        if post.get("found"):
+            segs0 = post.get("segments") or []
+            on_update(creator=post.get("handle") or "", caption=(post.get("caption") or "")[:6000], posted_at=post.get("posted_at") or "",
+                      title=post.get("title") or "", transcript=transcript_text(segs0)[:30000] if segs0 else None,
+                      transcript_source="platform" if segs0 else None)
 
         if post.get("video_url"):
             progress("Downloading the video")
@@ -554,6 +562,7 @@ def capture(url, frames_dir, progress=lambda step: None):
                         segs = transcribe_local(video)
                     if segs:
                         segments, source = segs, "audio"
+                        on_update(transcript=transcript_text(segs)[:30000], transcript_source="audio")
                 except ImportError:
                     if not segments:
                         warnings.append("No transcript: add GROQ_API_KEY in Railway to transcribe videos the platform gives no transcript for.")

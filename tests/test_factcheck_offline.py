@@ -67,17 +67,17 @@ t = tracer.Trace(check_row, claim_row, "", hop_limit=3, read_limit=1, model="tes
 web.read_into_library = lambda url, max_age_days=30: (db.get_source_by_url(url), True) if db.get_source_by_url(url) else (_ for _ in ()).throw(RuntimeError("HTTP 404"))
 out, _ = t.handle("read_source", {"url": "https://news.example.com/story"})
 check("source_id: " + sid in out and "from our library" in out, "read_source serves the library copy")
-out, _ = t.handle("record_hop", {"source_id": sid, "passage": "crime rose 40% in 2023", "kind": "secondary", "says": "x", "cites": "the study", "mutation": "none", "mutation_note": ""})
+out, _ = t.handle("record_hop", {"source_id": sid, "passage": "crime rose 40% in 2023", "kind": "secondary", "source_name": "Test Source", "compare": "x", "cites": "the study", "mutation": "none", "mutation_note": ""})
 check(out.startswith("REJECTED"), "receipt check rejects a misquote")
-out, _ = t.handle("record_hop", {"source_id": sid, "passage": "Crime rose 4.5%", "kind": "secondary", "says": "Reports 4.5%", "cites": "https://example.gov/report.pdf", "mutation": "number_changed", "mutation_note": "video says 40%"})
-check(out.startswith("REJECTED") and "5 to 120" in out, "too-short passage rejected")
-out, _ = t.handle("record_hop", {"source_id": sid, "passage": "News story text, edited later. Crime rose 4.5% in 2023.", "kind": "secondary", "says": "Reports 4.5%", "cites": "https://example.gov/report.pdf", "mutation": "number_changed", "mutation_note": "video says 40%"})
+out, _ = t.handle("record_hop", {"source_id": sid, "passage": "Crime rose 4.5%", "kind": "secondary", "source_name": "Test Source", "compare": "Reports 4.5%", "cites": "https://example.gov/report.pdf", "mutation": "number_changed", "mutation_note": "video says 40%"})
+check(out.startswith("REJECTED") and "5 to 80" in out, "too-short passage rejected")
+out, _ = t.handle("record_hop", {"source_id": sid, "passage": "News story text, edited later. Crime rose 4.5% in 2023.", "kind": "secondary", "source_name": "Test Source", "compare": "Reports 4.5%", "cites": "https://example.gov/report.pdf", "mutation": "number_changed", "mutation_note": "video says 40%"})
 check("Recorded as hop 1" in out, "hop 1 recorded")
-out, _ = t.handle("record_hop", {"source_id": sid, "passage": "News story text, edited later. Crime rose 4.5% in 2023.", "kind": "secondary", "says": "dup", "cites": "", "mutation": "none", "mutation_note": ""})
+out, _ = t.handle("record_hop", {"source_id": sid, "passage": "News story text, edited later. Crime rose 4.5% in 2023.", "kind": "secondary", "source_name": "Test Source", "compare": "dup", "cites": "", "mutation": "none", "mutation_note": ""})
 check("already hop 1" in out, "same source twice is flagged (circular check)")
 out, done = t.handle("complete_trace", {"ending": "origin_found", "verdict": "stretched", "confidence": "high", "bottom_line": "b", "video_vs_origin": "", "mutations": [], "unknowns": []})
 check(done is None and "primary" in out, "origin_found refused without a primary hop")
-out, _ = t.handle("record_hop", {"source_id": sid2, "passage": "violent crime rose 4.5% in 2023, mostly in three states", "kind": "primary", "says": "4.5% in three states", "cites": "nothing", "mutation": "scope_widened", "mutation_note": "three states -> nationwide"})
+out, _ = t.handle("record_hop", {"source_id": sid2, "passage": "violent crime rose 4.5% in 2023, mostly in three states", "kind": "primary", "source_name": "Test Source", "compare": "4.5% in three states", "cites": "nothing", "mutation": "scope_widened", "mutation_note": "three states -> nationwide"})
 check("hop 2" in out, "primary origin recorded as hop 2")
 out, done = t.handle("complete_trace", {"ending": "origin_found", "verdict": "stretched", "confidence": "high", "bottom_line": "The real figure is 4.5% in three states.", "video_vs_origin": "40% vs 4.5%", "mutations": [{"type": "number_changed", "note": "4.5 -> 40"}], "unknowns": []})
 check(done and done["verdict"] == "stretched", "trace completes with a verdict")
@@ -91,21 +91,15 @@ web.read_into_library = lambda url, max_age_days=30: (_ for _ in ()).throw(Asser
 out, _ = t2.handle("read_source", {"url": "https://brand-new.example.org/page"})
 check(out.startswith("BUDGET"), "read budget enforced")
 
-print("triage")
+print("central claim (v0.6: one claim per video)")
 packet = {"transcript": "[0:05] crime is up 40 percent since 2020\n[0:09] and it's the mayor's fault", "caption": "wake up"}
-ex = {"thesis": "t", "claims": [
-    {"quote": "it's the mayor's fault", "claim": "The mayor caused it", "timestamp": "0:09", "where": "speech", "type": "opinion", "stated_source": "", "central": True, "checkworthy": 1},
-    {"quote": "crime is up 40 percent since 2020", "claim": "Crime rose 40% since 2020", "timestamp": "0:05", "where": "speech", "type": "statistic", "stated_source": "", "central": False, "checkworthy": 3},
-    {"quote": "x1 a", "claim": "c2", "timestamp": "", "where": "caption", "type": "event", "stated_source": "", "central": False, "checkworthy": 2},
-    {"quote": "x2 b", "claim": "c3", "timestamp": "", "where": "caption", "type": "event", "stated_source": "", "central": False, "checkworthy": 2},
-    {"quote": "x3 c", "claim": "c4", "timestamp": "", "where": "caption", "type": "event", "stated_source": "", "central": False, "checkworthy": 1}]}
-cl = extract.triage(packet, ex)
-queued = [c for c in cl if c["status"] == "queued"]
-check(len(queued) == 3, "max 3 claims traced")
-check(queued[0]["claim"] == "Crime rose 40% since 2020" and queued[0]["central"], "central claim is the first checkable one when the central is an opinion")
-check(queued[0]["quote_verified"] and queued[0]["seconds"] == 5, "quote verified against transcript, timestamp parsed")
-check(any(c["status"] == "opinion" for c in cl) and any(c["status"] == "unchecked" for c in cl), "opinion labeled, extra claim left unchecked")
-
+c1 = extract.central_claim(packet, {"title": "t", "checkable": True, "quote": "crime is up 40 percent since 2020", "claim": "Crime rose 40% since 2020",
+                                    "timestamp": "0:05", "where": "speech", "type": "statistic", "stated_source": ""})
+check(c1 and c1["central"] and c1["status"] == "queued", "one central claim queued for tracing")
+check(c1["quote_verified"] and c1["seconds"] == 5, "quote verified against transcript, timestamp parsed")
+check(extract.central_claim(packet, {"title": "t", "checkable": False, "why_not": "Only opinions.", "quote": "", "claim": "", "timestamp": "", "where": "speech", "type": "other", "stated_source": ""}) is None,
+      "no checkable claim -> nothing traced")
+check(extract._pick_frames(list(range(16)), 10) == [0, 2, 3, 5, 7, 8, 10, 12, 13, 15] and len(extract._pick_frames([1, 2], 10)) == 2, "extraction sees at most 10 frames, spread evenly")
 
 print("fixes from the first real check (2026-10-30)")
 from backend.factcheck.tracer import coerce_args, Trace as _T
@@ -119,7 +113,7 @@ check("note" not in args and "note" in note, "unknown field ignored instead of f
 clid2 = db.add_claim(cid, 1, quote="q", claim="Group X got $40 million", type="statistic", central=1, rank=1, status="queued")
 art, _ = db.save_source("https://advocacy.example.org/tally", "Our analysis finds that donors gave Group X $40 million across forty grants, according to public grant databases we reviewed.", title="Tally")
 t3 = tracer.Trace(check_row, db.get_claim(clid2), "", hop_limit=4, read_limit=6, model="test")
-out, _ = t3.handle("record_hop", {"source_id": art, "passage": "donors gave Group X $40 million across forty grants", "kind": "primary", "source_type": "advocacy", "says": "s", "cites": "grant databases", "mutation": "none", "mutation_note": ""})
+out, _ = t3.handle("record_hop", {"source_id": art, "passage": "donors gave Group X $40 million across forty grants", "kind": "primary", "source_type": "advocacy", "source_name": "Test Source", "compare": "s", "cites": "grant databases", "mutation": "none", "mutation_note": ""})
 check("hop 1" in out, "article recorded with its source type")
 done_args = {"ending": "origin_found", "verdict": "stretched", "confidence": "medium", "bottom_line": "b", "video_vs_origin": "", "mutations": [], "unknowns": []}
 out, done = t3.handle("complete_trace", done_args)
@@ -149,6 +143,19 @@ web._jina = lambda u, engine=None: (calls_seen.append(engine or "plain"), {"titl
 res = web.fetch("https://www.openphilanthropy.org/grants/x")
 check(res["via"] == "jina-browser" and not res["thin"] and calls_seen == ["plain", "browser"], "thin page re-read with browser rendering, best copy kept")
 web._jina, web._direct = saved_j, saved_d
+
+
+print("v0.6 steps + archive/delete")
+t5 = tracer.Trace(check_row, db.get_claim(clid2), "", hop_limit=6, read_limit=6, model="test")
+long_passage = " ".join(["word"] * 85)
+out, _ = t5.handle("record_hop", {"source_id": sid2, "source_name": "State University", "passage": long_passage, "kind": "primary", "source_type": "study_or_dataset", "compare": "c", "mutation": "none", "cites": ""})
+check(out.startswith("REJECTED") and "80" in out, "passages over 80 words rejected (keep quotes short)")
+out, _ = t5.handle("record_hop", {"source_id": sid2, "source_name": "State University", "passage": "violent crime rose 4.5% in 2023, mostly in three states", "kind": "primary", "source_type": "study_or_dataset", "compare": " ".join(["x"] * 40), "mutation": "none", "cites": ""})
+check(out.startswith("REJECTED") and "25 words" in out, "compare must be one short sentence")
+out, _ = t5.handle("complete_trace", {"ending": "dead_end", "verdict": "no_origin_found", "confidence": "low", "bottom_line": " ".join(["y"] * 45), "video_vs_origin": "", "mutations": [], "unknowns": []})
+check(out.startswith("REJECTED") and "25 words" in out, "bottom line must be one short sentence")
+prog = db.get_claim(clid2)["data"]["progress"]
+check(prog["steps"] and prog["steps"][-1]["kind"] in ("found", "note", "read", "search", "library", "fail"), "live activity feed recorded for the phone")
 
 print("web helpers")
 from bs4 import BeautifulSoup
@@ -185,6 +192,14 @@ s = cl.get("/api/check/settings").get_json()
 check(s["rabbit_hole"]["reached_origin"] == 1 and s["token"] == "Bearer " + tok and s["library"]["sources"] >= 2, "settings: token, library and rabbit-hole stats")
 src = cl.get(f"/api/check/sources/{sid2}").get_json(); check(src["passages"] and "text" in src, "saved source with passages for highlighting")
 r = cl.get("/api/check/x/frames/../../etc.jpg"); check(r.status_code == 404, "frame path traversal blocked")
+
+r = cl.post(f"/api/check/{cid}/archive", json={"archived": True}); check(r.status_code == 200, "archive a check")
+lst = cl.get("/api/checks").get_json(); check(all(x["id"] != cid for x in lst["checks"]) and lst["archived_count"] == 1, "archived check leaves the main list")
+check(any(x["id"] == cid for x in cl.get("/api/checks?archived=1").get_json()["checks"]), "and shows in the archived list")
+cl.post(f"/api/check/{cid}/archive", json={"archived": False}); check(any(x["id"] == cid for x in cl.get("/api/checks").get_json()["checks"]), "restore (undo) brings it back")
+nsrc_before = db.library_stats()["sources"]
+r = cl.delete(f"/api/check/{cid}"); check(r.status_code == 200 and db.get_check(cid) is None and not db.claims_for(cid), "delete removes the check and its chain")
+check(db.library_stats()["sources"] == nsrc_before, "delete keeps the source library")
 check(cl.get("/").status_code == 200, "public homepage untouched")
 
 shutil.rmtree(TMP, ignore_errors=True)
